@@ -171,7 +171,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
 
         <button
           onClick={generarPlan}
-          disabled={!form.personas || !form.edad || !form.energia || form.gustos.length === 0}
+          disabled={!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0}
           style={{ width: '100%', padding: '16px', background: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#1a1a1a' : '#d4a843', color: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#444' : '#000', border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '600', cursor: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? 'not-allowed' : 'pointer', transition: 'all .2s' }}>
           ✨ Generar mi plan musical
         </button>
