@@ -60,7 +60,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta:
   ]
 }`
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/generar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
