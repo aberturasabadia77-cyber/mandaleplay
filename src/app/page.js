@@ -61,7 +61,7 @@ export default function Home() {
           <a href="#como" style={{ color:'var(--muted)', fontSize:'13px', textDecoration:'none' }}>Cómo funciona</a>
           <a href="#ocasiones" style={{ color:'var(--muted)', fontSize:'13px', textDecoration:'none' }}>Ocasiones</a>
           <a href="#faq" style={{ color:'var(--muted)', fontSize:'13px', textDecoration:'none' }}>FAQ</a>
-          <button onClick={() => setModal(true)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'10px 22px', borderRadius:'100px', fontSize:'13px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif" }}>
+          <button onClick={() => setModal(false)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'10px 22px', borderRadius:'100px', fontSize:'13px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif" }}>
             Crear mi evento
           </button>
         </div>
@@ -90,7 +90,7 @@ export default function Home() {
           </p>
 
           <div style={{ display:'flex', gap:'12px', flexWrap:'wrap', marginBottom:'56px', animation:'fadeUp .8s ease' }}>
-            <button onClick={() => setModal(true)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'16px 36px', borderRadius:'100px', fontSize:'15px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif", display:'flex', alignItems:'center', gap:'8px', boxShadow:'0 8px 40px rgba(232,201,122,0.2)' }}>
+            <button onClick={() => setModal(false)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'16px 36px', borderRadius:'100px', fontSize:'15px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif", display:'flex', alignItems:'center', gap:'8px', boxShadow:'0 8px 40px rgba(232,201,122,0.2)' }}>
               <span style={{ fontSize:'18px' }}>▶</span> Crear mi evento gratis
             </button>
             <a href="#como" style={{ background:'var(--surface)', border:'1px solid var(--border)', color:'var(--muted)', padding:'16px 28px', borderRadius:'100px', fontSize:'14px', textDecoration:'none', display:'flex', alignItems:'center', gap:'6px' }}>
@@ -156,7 +156,7 @@ export default function Home() {
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:'12px' }}>
             {OCASIONES.map((oc,i)=>(
-              <button key={i} className="reveal" onClick={() => setModal(true)}
+              <button key={i} className="reveal" onClick={() => setModal(false)}
                 style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'16px', padding:'24px 20px', cursor:'pointer', textAlign:'left', color:'var(--text)', fontFamily:"'DM Sans',sans-serif", transition:'all .2s', transitionDelay:`${i*0.06}s` }}
                 onMouseEnter={e => { e.currentTarget.style.background=`${oc.color}18`; e.currentTarget.style.borderColor=`${oc.color}50`; e.currentTarget.style.transform='translateY(-3px)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background='var(--surface)'; e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.transform='translateY(0)'; }}
@@ -208,7 +208,7 @@ export default function Home() {
           <p style={{ color:'var(--muted)', fontSize:'16px', lineHeight:1.6, marginBottom:'36px', maxWidth:'420px', margin:'0 auto 36px' }}>
             Sin DJ. Sin vueltas. Sin gastar de más.
           </p>
-          <button onClick={() => setModal(true)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'18px 48px', borderRadius:'100px', fontSize:'16px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif", boxShadow:'0 8px 60px rgba(232,201,122,0.3)' }}>
+          <button onClick={() => setModal(false)} style={{ background:'var(--gold)', color:'#1a1200', border:'none', padding:'18px 48px', borderRadius:'100px', fontSize:'16px', fontWeight:'600', cursor:'pointer', fontFamily:"'DM Sans',sans-serif", boxShadow:'0 8px 60px rgba(232,201,122,0.3)' }}>
             Mandale play a tu fiesta →
           </button>
           <p style={{ color:'var(--dim)', fontSize:'12px', marginTop:'16px', fontFamily:"'DM Mono',monospace", letterSpacing:'1px' }}>
