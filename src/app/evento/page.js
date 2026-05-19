@@ -394,7 +394,7 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
           Al conectar tu cuenta de Google, el sistema va a crear las playlists del evento automáticamente en tu YouTube. Vos solo apretás play.
         </p>
         <a
-          href={`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/api/auth/callback/google' : '')}&response_type=code&scope=https://www.googleapis.com/auth/youtube&access_type=offline`}
+          href={`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/api/auth/callback/google' : '')}&response_type=code&scope=https://www.googleapis.com/auth/youtube.force-ssl&access_type=offline`}
           onClick={() => sessionStorage.setItem('mandaleplay_plan', JSON.stringify(plan))}
           style={{ display: 'inline-block', background: '#fff', color: '#000', padding: '14px 32px', borderRadius: '100px', fontSize: '15px', fontWeight: '600', textDecoration: 'none', marginBottom: '16px' }}>
           🔗 Conectar con Google
