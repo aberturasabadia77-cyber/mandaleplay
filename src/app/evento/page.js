@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const OCASIONES = [
   { id: 'romantica', emoji: '🕯️', nombre: 'Velada romántica', sub: 'Para dos personas' },
@@ -23,6 +23,28 @@ export default function Evento() {
   const [form, setForm] = useState({ personas: '', edad: '', energia: '', gustos: [] })
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
+  const [accessToken, setAccessToken] = useState(null)
+  const [ytStatus, setYtStatus] = useState(null)
+  const [playlistUrl, setPlaylistUrl] = useState(null)
+
+  // Detectar vuelta del OAuth de Google
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('access_token')
+    const auth = params.get('auth')
+
+    if (token && auth === 'success') {
+      setAccessToken(token)
+      window.history.replaceState({}, '', '/evento')
+
+      const savedPlan = sessionStorage.getItem('mandaleplay_plan')
+      if (savedPlan) {
+        setPlan(JSON.parse(savedPlan))
+        setPaso(5)
+        sessionStorage.removeItem('mandaleplay_plan')
+      }
+    }
+  }, [])
 
   const toggleGusto = (g) => {
     setForm(f => ({
@@ -67,7 +89,6 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
       })
 
       const data = await response.json()
-
       if (data.error) throw new Error(data.error)
 
       const text = data.content?.find(b => b.type === 'text')?.text || ''
@@ -78,6 +99,63 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
     } catch (e) {
       setError('Hubo un error generando el plan. Intentá de nuevo.')
       setPaso(1)
+    }
+  }
+
+  const crearPlaylist = async () => {
+    setYtStatus('creating')
+    try {
+      // 1. Crear la playlist en YouTube
+      const playlistRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          snippet: {
+            title: plan.titulo,
+            description: `Plan musical generado por Mandale Play — ${plan.duracion_total}`
+          },
+          status: { privacyStatus: 'private' }
+        })
+      })
+      const playlistData = await playlistRes.json()
+      const playlistId = playlistData.id
+
+      if (!playlistId) throw new Error('No se pudo crear la playlist')
+
+      // 2. Buscar y agregar cada canción
+      for (const bloque of plan.bloques || []) {
+        for (const cancion of bloque.canciones_sugeridas || []) {
+          const searchRes = await fetch(
+            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(cancion)}&type=video&maxResults=1&key=${process.env.NEXT_PUBLIC_YT_API_KEY}`
+          )
+          const searchData = await searchRes.json()
+          const videoId = searchData.items?.[0]?.id?.videoId
+
+          if (videoId) {
+            await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                snippet: {
+                  playlistId,
+                  resourceId: { kind: 'youtube#video', videoId }
+                }
+              })
+            })
+          }
+        }
+      }
+
+      setPlaylistUrl(`https://www.youtube.com/playlist?list=${playlistId}`)
+      setYtStatus('done')
+    } catch (e) {
+      setYtStatus('error')
     }
   }
 
@@ -172,7 +250,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
         <button
           onClick={generarPlan}
           disabled={!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0}
-          style={{ width: '100%', padding: '16px', background: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#1a1a1a' : '#d4a843', color: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#444' : '#000', border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '600', cursor: (!form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? 'not-allowed' : 'pointer', transition: 'all .2s' }}>
+          style={{ width: '100%', padding: '16px', background: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#1a1a1a' : '#d4a843', color: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#444' : '#000', border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '600', cursor: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? 'not-allowed' : 'pointer', transition: 'all .2s' }}>
           ✨ Generar mi plan musical
         </button>
       </div>
@@ -262,6 +340,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
         </p>
         <a
           href={`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/api/auth/callback/google' : '')}&response_type=code&scope=https://www.googleapis.com/auth/youtube&access_type=offline`}
+          onClick={() => sessionStorage.setItem('mandaleplay_plan', JSON.stringify(plan))}
           style={{ display: 'inline-block', background: '#fff', color: '#000', padding: '14px 32px', borderRadius: '100px', fontSize: '15px', fontWeight: '600', textDecoration: 'none', marginBottom: '16px' }}>
           🔗 Conectar con Google
         </a>
@@ -269,6 +348,75 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
         <button onClick={() => setPaso(3)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' }}>
           ← Volver al plan
         </button>
+      </div>
+    </main>
+  )
+
+  // PASO 5 — YOUTUBE CONECTADO / CREAR PLAYLIST
+  if (paso === 5) return (
+    <main style={{ minHeight: '100vh', background: '#09090b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ maxWidth: '460px', textAlign: 'center' }}>
+
+        {ytStatus === null && (
+          <>
+            <div style={{ fontSize: '48px', marginBottom: '24px' }}>✅</div>
+            <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>YouTube conectado</h2>
+            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>
+              Todo listo. Vamos a crear la playlist
+            </p>
+            <p style={{ color: '#d4a843', fontSize: '17px', fontWeight: '600', marginBottom: '32px' }}>"{plan?.titulo}"</p>
+            <button
+              onClick={crearPlaylist}
+              style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '16px' }}>
+              🎵 Crear playlist en YouTube
+            </button>
+            <br />
+            <button onClick={() => setPaso(3)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' }}>
+              ← Volver al plan
+            </button>
+          </>
+        )}
+
+        {ytStatus === 'creating' && (
+          <>
+            <div style={{ width: '48px', height: '48px', border: '3px solid #222', borderTop: '3px solid #d4a843', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 24px' }} />
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            <p style={{ color: '#666', fontSize: '16px', marginBottom: '8px' }}>Buscando canciones y creando tu playlist...</p>
+            <p style={{ color: '#444', fontSize: '13px' }}>Esto puede tardar unos segundos</p>
+          </>
+        )}
+
+        {ytStatus === 'done' && (
+          <>
+            <div style={{ fontSize: '64px', marginBottom: '24px' }}>🎉</div>
+            <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>¡Playlist creada!</h2>
+            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>Tu playlist</p>
+            <p style={{ color: '#d4a843', fontSize: '17px', fontWeight: '600', marginBottom: '8px' }}>"{plan?.titulo}"</p>
+            <p style={{ color: '#666', fontSize: '15px', marginBottom: '32px' }}>está lista en YouTube. Solo apretás play.</p>
+            <a
+              href={playlistUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-block', background: '#ff0000', color: '#fff', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', textDecoration: 'none', marginBottom: '16px' }}>
+              ▶ Abrir en YouTube
+            </a>
+          </>
+        )}
+
+        {ytStatus === 'error' && (
+          <>
+            <div style={{ fontSize: '48px', marginBottom: '24px' }}>❌</div>
+            <p style={{ color: '#f87171', fontSize: '15px', marginBottom: '24px', lineHeight: 1.7 }}>
+              Hubo un error creando la playlist. Verificá que tu cuenta de YouTube esté activa e intentá de nuevo.
+            </p>
+            <button
+              onClick={() => setYtStatus(null)}
+              style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
+              Reintentar
+            </button>
+          </>
+        )}
+
       </div>
     </main>
   )
