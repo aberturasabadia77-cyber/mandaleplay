@@ -16,18 +16,18 @@ const OCASIONES = [
 const ENERGIAS = ['Muy tranquila 😌', 'Relajada 🙂', 'Animada 🎉', 'Fiesta total 🔥']
 const EDADES = ['18-25', '25-35', '35-50', '50+', 'Mixto']
 const GUSTOS = ['Reggaeton', 'Pop latino', 'Rock', 'Electrónica', 'Cumbia', 'Clásicos 80s/90s', 'Trap/Urbano', 'Jazz/Soul', 'Internacional', 'Variado']
+const DURACIONES = ['1 hora', '2 horas', '3 horas', '4 horas', '5+ horas']
 
 export default function Evento() {
   const [paso, setPaso] = useState(0)
   const [ocasion, setOcasion] = useState(null)
-  const [form, setForm] = useState({ personas: '', edad: '', energia: '', gustos: [] })
+  const [form, setForm] = useState({ personas: '', edad: '', energia: '', gustos: [], duracion: '' })
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
   const [accessToken, setAccessToken] = useState(null)
   const [ytStatus, setYtStatus] = useState(null)
   const [playlistUrl, setPlaylistUrl] = useState(null)
 
-  // Detectar vuelta del OAuth de Google
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const token = params.get('access_token')
@@ -53,9 +53,15 @@ export default function Evento() {
     }))
   }
 
+  const calcularCanciones = (duracion) => {
+    const horas = { '1 hora': 1, '2 horas': 2, '3 horas': 3, '4 horas': 4, '5+ horas': 5 }
+    return Math.ceil((horas[duracion] || 2) * 60 / 3.5)
+  }
+
   const generarPlan = async () => {
     setPaso(2)
     setError(null)
+    const cantCanciones = calcularCanciones(form.duracion)
     try {
       const prompt = `Sos un DJ profesional argentino. Generá un plan musical detallado para este evento:
 
@@ -64,11 +70,14 @@ Personas: ${form.personas}
 Rango de edad: ${form.edad}
 Energía deseada: ${form.energia}
 Gustos musicales: ${form.gustos.join(', ')}
+Duración del evento: ${form.duracion}
+
+IMPORTANTE: El evento dura ${form.duracion}. Necesitás exactamente ${cantCanciones} canciones de ~3.5 minutos cada una para cubrir todo el tiempo sin silencios. Distribuí estas ${cantCanciones} canciones en bloques según la energía del evento.
 
 Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, sin backticks):
 {
   "titulo": "nombre creativo para este evento",
-  "duracion_total": "X horas",
+  "duracion_total": "${form.duracion}",
   "tip_dj": "consejo corto y específico del DJ para este evento (máx 2 oraciones)",
   "bloques": [
     {
@@ -77,10 +86,12 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
       "energia": "baja/media/alta",
       "descripcion": "qué suena y por qué",
       "artistas": ["artista1", "artista2", "artista3"],
-      "canciones_sugeridas": ["canción1 - artista", "canción2 - artista"]
+      "canciones_sugeridas": ["canción1 - artista", "canción2 - artista", "canción3 - artista"]
     }
   ]
-}`
+}
+
+Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactamente ${cantCanciones} canciones.`
 
       const response = await fetch('/api/generar', {
         method: 'POST',
@@ -105,7 +116,6 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
   const crearPlaylist = async () => {
     setYtStatus('creating')
     try {
-      // 1. Crear la playlist en YouTube
       const playlistRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
         method: 'POST',
         headers: {
@@ -125,7 +135,6 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
 
       if (!playlistId) throw new Error('No se pudo crear la playlist')
 
-      // 2. Buscar y agregar cada canción
       for (const bloque of plan.bloques || []) {
         for (const cancion of bloque.canciones_sugeridas || []) {
           const searchRes = await fetch(
@@ -160,6 +169,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
   }
 
   const energiaColor = { 'baja': '#4ade80', 'media': '#facc15', 'alta': '#f97316' }
+  const formularioCompleto = ocasion && form.personas && form.edad && form.energia && form.gustos.length > 0 && form.duracion
 
   // PASO 0 — ELEGIR OCASIÓN
   if (paso === 0) return (
@@ -233,6 +243,18 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
           </div>
         </div>
 
+        <div style={{ marginBottom: '28px' }}>
+          <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>¿Cuánto dura el evento?</label>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {DURACIONES.map(d => (
+              <button key={d} onClick={() => setForm(f => ({ ...f, duracion: d }))}
+                style={{ padding: '10px 20px', borderRadius: '100px', border: `1px solid ${form.duracion === d ? '#d4a843' : '#333'}`, background: form.duracion === d ? '#d4a843' : 'transparent', color: form.duracion === d ? '#000' : '#ccc', cursor: 'pointer', fontSize: '14px', fontWeight: form.duracion === d ? '600' : '400', transition: 'all .15s' }}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div style={{ marginBottom: '36px' }}>
           <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>Géneros musicales (podés elegir varios)</label>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -249,8 +271,8 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
 
         <button
           onClick={generarPlan}
-          disabled={!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0}
-          style={{ width: '100%', padding: '16px', background: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#1a1a1a' : '#d4a843', color: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? '#444' : '#000', border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '600', cursor: (!ocasion || !form.personas || !form.edad || !form.energia || form.gustos.length === 0) ? 'not-allowed' : 'pointer', transition: 'all .2s' }}>
+          disabled={!formularioCompleto}
+          style={{ width: '100%', padding: '16px', background: formularioCompleto ? '#d4a843' : '#1a1a1a', color: formularioCompleto ? '#000' : '#444', border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '600', cursor: formularioCompleto ? 'pointer' : 'not-allowed', transition: 'all .2s' }}>
           ✨ Generar mi plan musical
         </button>
       </div>
@@ -361,9 +383,7 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
           <>
             <div style={{ fontSize: '48px', marginBottom: '24px' }}>✅</div>
             <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>YouTube conectado</h2>
-            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>
-              Todo listo. Vamos a crear la playlist
-            </p>
+            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>Todo listo. Vamos a crear la playlist</p>
             <p style={{ color: '#d4a843', fontSize: '17px', fontWeight: '600', marginBottom: '32px' }}>"{plan?.titulo}"</p>
             <button
               onClick={crearPlaylist}
