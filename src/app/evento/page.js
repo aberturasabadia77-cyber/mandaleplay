@@ -27,6 +27,7 @@ export default function Evento() {
   const [accessToken, setAccessToken] = useState(null)
   const [ytStatus, setYtStatus] = useState(null)
   const [playlistUrl, setPlaylistUrl] = useState(null)
+  const [ytProgress, setYtProgress] = useState(0)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -113,9 +114,41 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
     }
   }
 
+  const buscarVideo = async (cancion) => {
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(cancion)}&type=video&maxResults=1&key=${process.env.NEXT_PUBLIC_YT_API_KEY}`
+      )
+      const data = await res.json()
+      return data.items?.[0]?.id?.videoId || null
+    } catch {
+      return null
+    }
+  }
+
+  const agregarAPlaylist = async (playlistId, videoId) => {
+    try {
+      await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          snippet: {
+            playlistId,
+            resourceId: { kind: 'youtube#video', videoId }
+          }
+        })
+      })
+    } catch {}
+  }
+
   const crearPlaylist = async () => {
     setYtStatus('creating')
+    setYtProgress(0)
     try {
+      // 1. Crear playlist
       const playlistRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
         method: 'POST',
         headers: {
@@ -132,33 +165,33 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
       })
       const playlistData = await playlistRes.json()
       const playlistId = playlistData.id
-
       if (!playlistId) throw new Error('No se pudo crear la playlist')
 
+      // 2. Juntar todas las canciones
+      const todasLasCanciones = []
       for (const bloque of plan.bloques || []) {
         for (const cancion of bloque.canciones_sugeridas || []) {
-          const searchRes = await fetch(
-            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(cancion)}&type=video&maxResults=1&key=${process.env.NEXT_PUBLIC_YT_API_KEY}`
-          )
-          const searchData = await searchRes.json()
-          const videoId = searchData.items?.[0]?.id?.videoId
-
-          if (videoId) {
-            await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                snippet: {
-                  playlistId,
-                  resourceId: { kind: 'youtube#video', videoId }
-                }
-              })
-            })
-          }
+          todasLasCanciones.push(cancion)
         }
+      }
+
+      const total = todasLasCanciones.length
+
+      // 3. Buscar todas en paralelo (grupos de 5)
+      const videoIds = []
+      for (let i = 0; i < total; i += 5) {
+        const grupo = todasLasCanciones.slice(i, i + 5)
+        const resultados = await Promise.all(grupo.map(c => buscarVideo(c)))
+        videoIds.push(...resultados)
+        setYtProgress(Math.round(((i + grupo.length) / total) * 70))
+      }
+
+      // 4. Agregar a la playlist de a una (para respetar el orden)
+      for (let i = 0; i < videoIds.length; i++) {
+        if (videoIds[i]) {
+          await agregarAPlaylist(playlistId, videoIds[i])
+        }
+        setYtProgress(70 + Math.round(((i + 1) / videoIds.length) * 30))
       }
 
       setPlaylistUrl(`https://www.youtube.com/playlist?list=${playlistId}`)
@@ -401,8 +434,11 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
           <>
             <div style={{ width: '48px', height: '48px', border: '3px solid #222', borderTop: '3px solid #d4a843', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 24px' }} />
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-            <p style={{ color: '#666', fontSize: '16px', marginBottom: '8px' }}>Buscando canciones y creando tu playlist...</p>
-            <p style={{ color: '#444', fontSize: '13px' }}>Esto puede tardar unos segundos</p>
+            <p style={{ color: '#666', fontSize: '16px', marginBottom: '16px' }}>Armando tu playlist...</p>
+            <div style={{ background: '#1a1a1a', borderRadius: '100px', height: '8px', width: '100%', overflow: 'hidden' }}>
+              <div style={{ background: '#d4a843', height: '100%', width: `${ytProgress}%`, transition: 'width 0.5s ease', borderRadius: '100px' }} />
+            </div>
+            <p style={{ color: '#444', fontSize: '13px', marginTop: '12px' }}>{ytProgress}% completado</p>
           </>
         )}
 
@@ -427,7 +463,7 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
           <>
             <div style={{ fontSize: '48px', marginBottom: '24px' }}>❌</div>
             <p style={{ color: '#f87171', fontSize: '15px', marginBottom: '24px', lineHeight: 1.7 }}>
-              Hubo un error creando la playlist. Verificá que tu cuenta de YouTube esté activa e intentá de nuevo.
+              Hubo un error creando la playlist. Intentá de nuevo.
             </p>
             <button
               onClick={() => setYtStatus(null)}
