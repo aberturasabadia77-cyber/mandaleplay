@@ -67,7 +67,7 @@ function PlayerInner() {
     const query = `${c.titulo} ${c.artista} audio`
 
     try {
-      playerRef.current.loadVideoByQuery({ query })
+      playerRef.current.loadPlaylist({ listType: 'search', list: query, index: 0 })
     } catch (e) {
       console.warn('loadVideoByQuery error:', e)
       agendarAutoSkip(1500)
