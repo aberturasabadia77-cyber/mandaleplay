@@ -19,23 +19,15 @@ function PlayerInner() {
   const [nombreEvento, setNombreEvento] = useState('')
   const [estado,       setEstado]       = useState('cargando')
 
-  // ── Leer datos desde sessionStorage ───────────────────────────────────────
+  // ── Leer datos desde sessionStorage ──────────────────────────────────────
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('mandale_plan')
-      if (!raw) {
-        console.error('No hay datos en sessionStorage')
-        return
-      }
+      if (!raw) { console.error('No hay datos en sessionStorage'); return }
       const { canciones: lista, nombre } = JSON.parse(raw)
       if (nombre) setNombreEvento(nombre)
-      if (lista?.length) {
-        setCanciones(lista)
-        cancionesR.current = lista
-      }
-    } catch (e) {
-      console.error('Error leyendo sessionStorage:', e)
-    }
+      if (lista?.length) { setCanciones(lista); cancionesR.current = lista }
+    } catch (e) { console.error('Error leyendo sessionStorage:', e) }
   }, [])
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -48,13 +40,11 @@ function PlayerInner() {
     limpiarTimers()
     skipTimerR.current = setTimeout(() => {
       const siguiente = indiceR.current + 1
-      if (siguiente < cancionesR.current.length) {
-        cargarPorIndice(siguiente)
-      }
+      if (siguiente < cancionesR.current.length) cargarPorIndice(siguiente)
     }, ms)
   }
 
-  const cargarPorIndice = (idx) => {
+  const cargarPorIndice = async (idx) => {
     const lista = cancionesR.current
     if (!playerRef.current || idx < 0 || idx >= lista.length) return
 
@@ -67,21 +57,34 @@ function PlayerInner() {
     const query = `${c.titulo} ${c.artista} audio`
 
     try {
-      playerRef.current.loadPlaylist({ listType: 'search', list: query, index: 0 })
-    } catch (e) {
-      console.warn('loadVideoByQuery error:', e)
-      agendarAutoSkip(1500)
-      return
-    }
+      // Buscar el videoId desde el servidor (sin API key)
+      const res  = await fetch(`/api/buscar?q=${encodeURIComponent(query)}`)
+      const json = await res.json()
 
-    // Si en 9s no arrancó → skip
-    loadTimerR.current = setTimeout(() => {
-      const s = playerRef.current?.getPlayerState?.()
-      if (s !== 1 && s !== 3) agendarAutoSkip(0)
-    }, 9000)
+      if (!json.videoId) {
+        console.warn('Sin videoId para:', query)
+        agendarAutoSkip(500)
+        return
+      }
+
+      playerRef.current.loadVideoById({
+        videoId:      json.videoId,
+        startSeconds: c.inicio || 0,
+      })
+
+      // Si en 10s no arrancó → skip
+      loadTimerR.current = setTimeout(() => {
+        const s = playerRef.current?.getPlayerState?.()
+        if (s !== 1 && s !== 3) agendarAutoSkip(0)
+      }, 10000)
+
+    } catch (e) {
+      console.warn('Error buscando canción:', e)
+      agendarAutoSkip(1500)
+    }
   }
 
-  // ── Init IFrame API ────────────────────────────────────────────────────────
+  // ── Init IFrame API ───────────────────────────────────────────────────────
   useEffect(() => {
     if (canciones.length === 0 || iniciando.current) return
     iniciando.current = true
@@ -99,12 +102,12 @@ function PlayerInner() {
         events: {
           onReady: () => cargarPorIndice(0),
           onStateChange: ({ data }) => {
-            const YT = window.YT.PlayerState
-            if (data === YT.PLAYING) { limpiarTimers(); setEstado('playing') }
-            if (data === YT.ENDED)   { agendarAutoSkip(800) }
+            const S = window.YT.PlayerState
+            if (data === S.PLAYING) { limpiarTimers(); setEstado('playing') }
+            if (data === S.ENDED)   { agendarAutoSkip(800) }
           },
           onError: ({ data }) => {
-            console.warn('YT error código:', data)
+            console.warn('YT error:', data)
             setEstado('error')
             agendarAutoSkip(1800)
           },
@@ -112,9 +115,8 @@ function PlayerInner() {
       })
     }
 
-    if (window.YT?.Player) {
-      crearPlayer()
-    } else {
+    if (window.YT?.Player) crearPlayer()
+    else {
       const tag = document.createElement('script')
       tag.src   = 'https://www.youtube.com/iframe_api'
       document.head.appendChild(tag)
@@ -127,16 +129,10 @@ function PlayerInner() {
   const actual = canciones[indiceActual] || {}
 
   return (
-    <main style={{
-      background: '#0a0a0a', minHeight: '100vh', color: '#fff',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      display: 'flex', flexDirection: 'column',
-    }}>
+    <main style={{ background: '#0a0a0a', minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column' }}>
+
       {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '12px 20px', borderBottom: '1px solid #1a1a1a', flexShrink: 0,
-      }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #1a1a1a', flexShrink: 0 }}>
         <button onClick={() => router.back()} style={{ background: 'none', border: '1px solid #333', color: '#888', padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px' }}>← Plan</button>
         <span style={{ color: '#888', fontSize: '13px', flex: 1, textAlign: 'center', padding: '0 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreEvento}</span>
         <span style={{ color: '#555', fontSize: '13px', flexShrink: 0 }}>{indiceActual + 1} / {canciones.length}</span>
@@ -147,7 +143,6 @@ function PlayerInner() {
         <div style={{ paddingTop: '56.25%', position: 'relative', background: '#111' }}>
           <div ref={ytDivRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
 
-          {/* Overlay error */}
           {estado === 'error' && (
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,10,10,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
               <div style={{ fontSize: '34px', marginBottom: '10px' }}>⚠️</div>
@@ -155,8 +150,6 @@ function PlayerInner() {
               <p style={{ color: '#555', fontSize: '12px' }}>Pasando a la siguiente canción...</p>
             </div>
           )}
-
-          {/* Overlay cargando */}
           {estado === 'cargando' && (
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,10,10,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, pointerEvents: 'none' }}>
               <span style={{ color: '#d4a843', fontSize: '14px', letterSpacing: '1px' }}>Buscando...</span>
@@ -165,7 +158,7 @@ function PlayerInner() {
         </div>
       </div>
 
-      {/* Info canción */}
+      {/* Info */}
       <div style={{ textAlign: 'center', padding: '18px 20px 4px' }}>
         {actual.bloque && (
           <div style={{ fontSize: '10px', color: '#d4a843', letterSpacing: '2px', marginBottom: '6px', textTransform: 'uppercase' }}>
@@ -201,8 +194,8 @@ function PlayerInner() {
             <div key={i} onClick={() => cargarPorIndice(i)} style={{
               display: 'flex', alignItems: 'center', gap: '10px',
               padding: '9px 10px', borderRadius: '8px', cursor: 'pointer',
-              background:   esActual ? '#1a1400' : 'transparent',
-              borderLeft:   esActual ? '3px solid #d4a843' : '3px solid transparent',
+              background: esActual ? '#1a1400' : 'transparent',
+              borderLeft: esActual ? '3px solid #d4a843' : '3px solid transparent',
               marginBottom: '1px', transition: 'background .15s',
             }}
               onMouseEnter={e => { if (!esActual) e.currentTarget.style.background = '#141414' }}
