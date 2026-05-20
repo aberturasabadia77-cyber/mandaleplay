@@ -98,7 +98,30 @@ El campo "inicio" es el segundo donde empieza la música real (sin intro).`
   }
 
   const reproducirAhora = () => {
-    sessionStorage.setItem('mandaleplay_plan', JSON.stringify(plan))
+    // Aplanar bloques → array plano de canciones con {titulo, artista, bloque, inicio}
+    const canciones = plan.bloques.flatMap(bloque =>
+      (bloque.canciones_sugeridas || []).map(c => {
+        const textoCompleto = typeof c === 'string' ? c : (c.titulo || '')
+        // Separar "Nombre canción - Artista" por el ÚLTIMO " - "
+        const ultimoGuion = textoCompleto.lastIndexOf(' - ')
+        const titulo  = ultimoGuion !== -1 ? textoCompleto.slice(0, ultimoGuion).trim() : textoCompleto.trim()
+        const artista = ultimoGuion !== -1 ? textoCompleto.slice(ultimoGuion + 3).trim() : ''
+        return {
+          titulo,
+          artista,
+          bloque: bloque.nombre,
+          momento: bloque.nombre,
+          inicio: typeof c === 'object' ? (c.inicio || 0) : 0,
+        }
+      })
+    )
+
+    // Guardar con la key que lee el player
+    sessionStorage.setItem('mandale_plan', JSON.stringify({
+      canciones,
+      nombre: plan.titulo || '',
+    }))
+
     window.location.href = '/player'
   }
 
