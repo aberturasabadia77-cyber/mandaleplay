@@ -24,28 +24,6 @@ export default function Evento() {
   const [form, setForm] = useState({ personas: '', edad: '', energia: '', gustos: [], duracion: '' })
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
-  const [accessToken, setAccessToken] = useState(null)
-  const [ytStatus, setYtStatus] = useState(null)
-  const [playlistUrl, setPlaylistUrl] = useState(null)
-  const [ytProgress, setYtProgress] = useState(0)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const token = params.get('access_token')
-    const auth = params.get('auth')
-
-    if (token && auth === 'success') {
-      setAccessToken(token)
-      window.history.replaceState({}, '', '/evento')
-
-      const savedPlan = sessionStorage.getItem('mandaleplay_plan')
-      if (savedPlan) {
-        setPlan(JSON.parse(savedPlan))
-        setPaso(5)
-        sessionStorage.removeItem('mandaleplay_plan')
-      }
-    }
-  }, [])
 
   const toggleGusto = (g) => {
     setForm(f => ({
@@ -73,7 +51,8 @@ Energía deseada: ${form.energia}
 Gustos musicales: ${form.gustos.join(', ')}
 Duración del evento: ${form.duracion}
 
-IMPORTANTE: El evento dura ${form.duracion}. Necesitás exactamente ${cantCanciones} canciones de ~3.5 minutos cada una para cubrir todo el tiempo sin silencios. Distribuí estas ${cantCanciones} canciones en bloques según la energía del evento.
+IMPORTANTE: Necesitás exactamente ${cantCanciones} canciones para cubrir ${form.duracion} sin silencios.
+Para cada canción indicá el segundo exacto donde empieza la música real (saltando intro).
 
 Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, sin backticks):
 {
@@ -87,12 +66,16 @@ Respondé SOLO con un JSON válido con esta estructura exacta (sin texto extra, 
       "energia": "baja/media/alta",
       "descripcion": "qué suena y por qué",
       "artistas": ["artista1", "artista2", "artista3"],
-      "canciones_sugeridas": ["canción1 - artista", "canción2 - artista", "canción3 - artista"]
+      "canciones_sugeridas": [
+        { "titulo": "Nombre canción - Artista", "inicio": 15 },
+        { "titulo": "Otra canción - Artista", "inicio": 0 }
+      ]
     }
   ]
 }
 
-Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactamente ${cantCanciones} canciones.`
+La suma total de canciones_sugeridas debe ser exactamente ${cantCanciones}.
+El campo "inicio" es el segundo donde empieza la música real (sin intro).`
 
       const response = await fetch('/api/generar', {
         method: 'POST',
@@ -114,91 +97,9 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
     }
   }
 
-  const buscarVideo = async (cancion) => {
-    try {
-      const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(cancion)}&type=video&maxResults=1&key=${process.env.NEXT_PUBLIC_YT_API_KEY}`
-      )
-      const data = await res.json()
-      return data.items?.[0]?.id?.videoId || null
-    } catch {
-      return null
-    }
-  }
-
-  const agregarAPlaylist = async (playlistId, videoId) => {
-    try {
-      await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          snippet: {
-            playlistId,
-            resourceId: { kind: 'youtube#video', videoId }
-          }
-        })
-      })
-    } catch {}
-  }
-
-  const crearPlaylist = async () => {
-    setYtStatus('creating')
-    setYtProgress(0)
-    try {
-      // 1. Crear playlist
-      const playlistRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          snippet: {
-            title: plan.titulo,
-            description: `Plan musical generado por Mandale Play — ${plan.duracion_total}`
-          },
-          status: { privacyStatus: 'private' }
-        })
-      })
-      const playlistData = await playlistRes.json()
-      const playlistId = playlistData.id
-      if (!playlistId) throw new Error('No se pudo crear la playlist')
-
-      // 2. Juntar todas las canciones
-      const todasLasCanciones = []
-      for (const bloque of plan.bloques || []) {
-        for (const cancion of bloque.canciones_sugeridas || []) {
-          todasLasCanciones.push(cancion)
-        }
-      }
-
-      const total = todasLasCanciones.length
-
-      // 3. Buscar todas en paralelo (grupos de 5)
-      const videoIds = []
-      for (let i = 0; i < total; i += 5) {
-        const grupo = todasLasCanciones.slice(i, i + 5)
-        const resultados = await Promise.all(grupo.map(c => buscarVideo(c)))
-        videoIds.push(...resultados)
-        setYtProgress(Math.round(((i + grupo.length) / total) * 70))
-      }
-
-      // 4. Agregar a la playlist de a una (para respetar el orden)
-      for (let i = 0; i < videoIds.length; i++) {
-        if (videoIds[i]) {
-          await agregarAPlaylist(playlistId, videoIds[i])
-        }
-        setYtProgress(70 + Math.round(((i + 1) / videoIds.length) * 30))
-      }
-
-      setPlaylistUrl(`https://www.youtube.com/playlist?list=${playlistId}`)
-      setYtStatus('done')
-    } catch (e) {
-      setYtStatus('error')
-    }
+  const reproducirAhora = () => {
+    sessionStorage.setItem('mandaleplay_plan', JSON.stringify(plan))
+    window.location.href = '/player'
   }
 
   const energiaColor = { 'baja': '#4ade80', 'media': '#facc15', 'alta': '#f97316' }
@@ -361,7 +262,10 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
               {bloque.canciones_sugeridas?.length > 0 && (
                 <div style={{ marginTop: '10px', borderTop: '1px solid #1a1a1a', paddingTop: '10px' }}>
                   {bloque.canciones_sugeridas.map((c, j) => (
-                    <p key={j} style={{ fontSize: '12px', color: '#444', margin: '4px 0' }}>♪ {c}</p>
+                    <p key={j} style={{ fontSize: '12px', color: '#444', margin: '4px 0' }}>
+                      ♪ {typeof c === 'string' ? c : c.titulo}
+                      {typeof c === 'object' && c.inicio > 0 && <span style={{ color: '#2a2a2a', marginLeft: '6px' }}>▶ {c.inicio}s</span>}
+                    </p>
                   ))}
                 </div>
               )}
@@ -370,109 +274,17 @@ Asegurate que la suma de canciones_sugeridas de todos los bloques sea exactament
         </div>
 
         <div style={{ background: 'linear-gradient(135deg, #1a1400, #0f0a00)', border: '1px solid #2a1e00', borderRadius: '20px', padding: '32px', textAlign: 'center' }}>
-          <div style={{ fontSize: '36px', marginBottom: '16px' }}>▶️</div>
-          <h3 style={{ fontSize: '22px', fontWeight: '400', marginBottom: '10px', color: '#fff' }}>¿Listo para reproducir?</h3>
-          <p style={{ color: '#666', fontSize: '14px', marginBottom: '24px', lineHeight: 1.7, maxWidth: '360px', margin: '0 auto 24px' }}>Conectá tu YouTube Premium y el sistema crea las playlists automáticamente en tu cuenta.</p>
+          <div style={{ fontSize: '36px', marginBottom: '16px' }}>🎵</div>
+          <h3 style={{ fontSize: '22px', fontWeight: '400', marginBottom: '10px', color: '#fff' }}>¿Listo para escuchar?</h3>
+          <p style={{ color: '#666', fontSize: '14px', lineHeight: 1.7, maxWidth: '360px', margin: '0 auto 24px' }}>
+            Mandale Play reproduce tu plan completo con enganches automáticos entre canciones.
+          </p>
           <button
-            onClick={() => setPaso(4)}
-            style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
-            Conectar YouTube Premium →
+            onClick={reproducirAhora}
+            style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '16px', fontWeight: '700', cursor: 'pointer' }}>
+            ▶ Reproducir ahora
           </button>
-          <p style={{ color: '#333', fontSize: '12px', marginTop: '14px' }}>Necesitás tener YouTube Premium activo</p>
         </div>
-      </div>
-    </main>
-  )
-
-  // PASO 4 — CONECTAR YOUTUBE
-  if (paso === 4) return (
-    <main style={{ minHeight: '100vh', background: '#09090b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '460px', textAlign: 'center' }}>
-        <div style={{ fontSize: '48px', marginBottom: '24px' }}>🎵</div>
-        <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>Conectá tu YouTube</h2>
-        <p style={{ color: '#666', fontSize: '15px', marginBottom: '32px', lineHeight: 1.7 }}>
-          Al conectar tu cuenta de Google, el sistema va a crear las playlists del evento automáticamente en tu YouTube. Vos solo apretás play.
-        </p>
-        <a
-          href={`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/api/auth/callback/google' : '')}&response_type=code&scope=https://www.googleapis.com/auth/youtube.force-ssl&access_type=offline`}
-          onClick={() => sessionStorage.setItem('mandaleplay_plan', JSON.stringify(plan))}
-          style={{ display: 'inline-block', background: '#fff', color: '#000', padding: '14px 32px', borderRadius: '100px', fontSize: '15px', fontWeight: '600', textDecoration: 'none', marginBottom: '16px' }}>
-          🔗 Conectar con Google
-        </a>
-        <p style={{ color: '#333', fontSize: '12px', marginBottom: '20px' }}>Solo se accede a tu YouTube. No guardamos datos personales.</p>
-        <button onClick={() => setPaso(3)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' }}>
-          ← Volver al plan
-        </button>
-      </div>
-    </main>
-  )
-
-  // PASO 5 — YOUTUBE CONECTADO / CREAR PLAYLIST
-  if (paso === 5) return (
-    <main style={{ minHeight: '100vh', background: '#09090b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '460px', textAlign: 'center' }}>
-
-        {ytStatus === null && (
-          <>
-            <div style={{ fontSize: '48px', marginBottom: '24px' }}>✅</div>
-            <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>YouTube conectado</h2>
-            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>Todo listo. Vamos a crear la playlist</p>
-            <p style={{ color: '#d4a843', fontSize: '17px', fontWeight: '600', marginBottom: '32px' }}>"{plan?.titulo}"</p>
-            <button
-              onClick={crearPlaylist}
-              style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '16px' }}>
-              🎵 Crear playlist en YouTube
-            </button>
-            <br />
-            <button onClick={() => setPaso(3)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '13px', cursor: 'pointer' }}>
-              ← Volver al plan
-            </button>
-          </>
-        )}
-
-        {ytStatus === 'creating' && (
-          <>
-            <div style={{ width: '48px', height: '48px', border: '3px solid #222', borderTop: '3px solid #d4a843', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 24px' }} />
-            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-            <p style={{ color: '#666', fontSize: '16px', marginBottom: '16px' }}>Armando tu playlist...</p>
-            <div style={{ background: '#1a1a1a', borderRadius: '100px', height: '8px', width: '100%', overflow: 'hidden' }}>
-              <div style={{ background: '#d4a843', height: '100%', width: `${ytProgress}%`, transition: 'width 0.5s ease', borderRadius: '100px' }} />
-            </div>
-            <p style={{ color: '#444', fontSize: '13px', marginTop: '12px' }}>{ytProgress}% completado</p>
-          </>
-        )}
-
-        {ytStatus === 'done' && (
-          <>
-            <div style={{ fontSize: '64px', marginBottom: '24px' }}>🎉</div>
-            <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '12px', color: '#fff' }}>¡Playlist creada!</h2>
-            <p style={{ color: '#666', fontSize: '15px', marginBottom: '8px', lineHeight: 1.7 }}>Tu playlist</p>
-            <p style={{ color: '#d4a843', fontSize: '17px', fontWeight: '600', marginBottom: '8px' }}>"{plan?.titulo}"</p>
-            <p style={{ color: '#666', fontSize: '15px', marginBottom: '32px' }}>está lista en YouTube. Solo apretás play.</p>
-            <a
-              href={playlistUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'inline-block', background: '#ff0000', color: '#fff', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', textDecoration: 'none', marginBottom: '16px' }}>
-              ▶ Abrir en YouTube
-            </a>
-          </>
-        )}
-
-        {ytStatus === 'error' && (
-          <>
-            <div style={{ fontSize: '48px', marginBottom: '24px' }}>❌</div>
-            <p style={{ color: '#f87171', fontSize: '15px', marginBottom: '24px', lineHeight: 1.7 }}>
-              Hubo un error creando la playlist. Intentá de nuevo.
-            </p>
-            <button
-              onClick={() => setYtStatus(null)}
-              style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
-              Reintentar
-            </button>
-          </>
-        )}
-
       </div>
     </main>
   )
