@@ -139,7 +139,9 @@ export default function Home() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ fontSize: '15px', fontWeight: '600' }}>Mandale <span style={{ color: '#d4a843' }}>Play</span></div>
-        <div style={{ fontSize: '12px', color: '#333' }}>© 2026 · Hecho con IA en Argentina 🇦🇷</div>
+        <div style={{ fontSize: '12px', color: '#333' }}>
+          © 2026 · Hecho con IA en Argentina 🇦🇷 · BPM data by <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer" style={{ color: '#555', textDecoration: 'underline' }}>GetSongBPM</a>
+        </div>
       </footer>
 
     </main>
