@@ -25,6 +25,12 @@ const ENERGIA_COLOR = { baja: '#4ade80', media: '#facc15', alta: '#f97316' }
 const ENERGIA_BG    = { baja: '#052e16', media: '#1c1500', alta: '#1c0a00' }
 const ENERGIA_LABEL = { baja: 'Baja energía', media: 'Media energía', alta: 'Alta energía' }
 
+const BPM_RANGO = {
+  baja:  { min: 70,  max: 95,  label: '70-95 BPM' },
+  media: { min: 95,  max: 120, label: '95-120 BPM' },
+  alta:  { min: 120, max: 140, label: '120-140 BPM' },
+}
+
 const parsearMinutos = (str = '') => {
   const h = str.match(/(\d+)\s*h/)
   const m = str.match(/(\d+)\s*min/)
@@ -57,14 +63,16 @@ function Timeline({ bloques }) {
         })}
       </div>
 
-      {/* Duraciones */}
+      {/* Duraciones y BPM */}
       <div style={{ display: 'flex', gap: '2px', marginBottom: '24px' }}>
         {bloques.map((b, i) => {
           const pct   = (parsearMinutos(b.duracion) / totalMin) * 100
           const color = ENERGIA_COLOR[b.energia] || '#d4a843'
+          const bpm   = BPM_RANGO[b.energia]
           return (
             <div key={i} style={{ width: `${pct}%`, minWidth: '4px' }}>
               <div style={{ fontSize: '9px', color, fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.duracion}</div>
+              {pct > 10 && bpm && <div style={{ fontSize: '8px', color: '#333', whiteSpace: 'nowrap' }}>{bpm.label}</div>}
             </div>
           )
         })}
@@ -76,40 +84,98 @@ function Timeline({ bloques }) {
           const color = ENERGIA_COLOR[b.energia] || '#d4a843'
           const bg    = ENERGIA_BG[b.energia]    || '#0f0a00'
           const open  = abierto === i
+          const bpm   = BPM_RANGO[b.energia]
+
+          // BPM de las canciones para mostrar progresión
+          const bpms  = b.canciones_sugeridas?.map(c => typeof c === 'object' ? c.bpm : null).filter(Boolean) || []
+          const bpmMin = bpms.length ? Math.min(...bpms) : null
+          const bpmMax = bpms.length ? Math.max(...bpms) : null
+
           return (
             <div key={i} onClick={() => setAbierto(open ? null : i)} style={{
               borderRadius: '14px', border: `1px solid ${open ? color + '66' : '#1e1e1e'}`,
               background: open ? bg : '#0f0f0f', overflow: 'hidden', cursor: 'pointer', transition: 'all .2s',
             }}>
+              {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: color, flexShrink: 0, boxShadow: open ? `0 0 8px ${color}` : 'none' }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '10px', color: '#444', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
-                    Bloque {i + 1} · {b.duracion} · <span style={{ color }}>{ENERGIA_LABEL[b.energia] || b.energia}</span>
+                  <div style={{ fontSize: '10px', color: '#444', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <span>Bloque {i + 1} · {b.duracion}</span>
+                    <span style={{ color }}>● {ENERGIA_LABEL[b.energia] || b.energia}</span>
+                    {bpmMin && bpmMax && (
+                      <span style={{ color: '#333' }}>
+                        ♩ {bpmMin === bpmMax ? `${bpmMin}` : `${bpmMin}→${bpmMax}`} BPM
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '15px', color: open ? '#fff' : '#ccc', fontWeight: '500' }}>{b.nombre}</div>
                 </div>
                 <div style={{ fontSize: '11px', color: '#333' }}>{open ? '▲' : '▼'}</div>
               </div>
+
+              {/* Contenido expandido */}
               {open && (
                 <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${color}22` }}>
                   <p style={{ fontSize: '13px', color: '#666', marginBottom: '14px', lineHeight: 1.7, marginTop: '12px' }}>{b.descripcion}</p>
+
+                  {/* Artistas */}
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
                     {b.artistas?.map((a, j) => (
                       <span key={j} style={{ fontSize: '11px', background: '#1a1a1a', border: `1px solid ${color}33`, color, padding: '3px 10px', borderRadius: '100px' }}>{a}</span>
                     ))}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    {b.canciones_sugeridas?.map((c, j) => (
-                      <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid #111' }}>
-                        <span style={{ color, fontSize: '10px', flexShrink: 0 }}>♪</span>
-                        <span style={{ fontSize: '13px', color: '#777', flex: 1 }}>{typeof c === 'string' ? c : c.titulo}</span>
-                        {typeof c === 'object' && c.inicio > 0 && (
-                          <span style={{ fontSize: '10px', color: '#333', flexShrink: 0 }}>▶ {c.inicio}s</span>
-                        )}
-                      </div>
-                    ))}
+
+                  {/* Canciones con BPM */}
+                  <div style={{ fontSize: '10px', color: '#333', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    Progresión de BPM en este bloque
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {b.canciones_sugeridas?.map((c, j) => {
+                      const cancion = typeof c === 'string' ? { titulo: c, bpm: null, inicio: 0 } : c
+                      const bpmColor = cancion.bpm
+                        ? cancion.bpm < 95  ? ENERGIA_COLOR.baja
+                        : cancion.bpm < 120 ? ENERGIA_COLOR.media
+                        : ENERGIA_COLOR.alta
+                        : '#333'
+                      return (
+                        <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid #111' }}>
+                          <span style={{ color, fontSize: '10px', flexShrink: 0 }}>♪</span>
+                          <span style={{ fontSize: '13px', color: '#777', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {cancion.titulo}
+                          </span>
+                          {cancion.bpm && (
+                            <span style={{ fontSize: '10px', color: bpmColor, flexShrink: 0, fontWeight: '600', minWidth: '52px', textAlign: 'right' }}>
+                              {cancion.bpm} BPM
+                            </span>
+                          )}
+                          {cancion.inicio > 0 && (
+                            <span style={{ fontSize: '10px', color: '#333', flexShrink: 0 }}>▶{cancion.inicio}s</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Barra visual de progresión BPM */}
+                  {bpms.length > 1 && (
+                    <div style={{ marginTop: '12px', padding: '10px 12px', background: '#0a0a0a', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '10px', color: '#333', marginBottom: '6px' }}>Progresión de energía en este bloque</div>
+                      <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '24px' }}>
+                        {bpms.map((bpm, j) => {
+                          const minBpm = 60, maxBpm = 145
+                          const altura = Math.round(((bpm - minBpm) / (maxBpm - minBpm)) * 100)
+                          const bc = bpm < 95 ? ENERGIA_COLOR.baja : bpm < 120 ? ENERGIA_COLOR.media : ENERGIA_COLOR.alta
+                          return (
+                            <div key={j} title={`${bpm} BPM`} style={{
+                              flex: 1, background: bc, borderRadius: '2px 2px 0 0',
+                              height: `${Math.max(altura, 10)}%`, opacity: 0.8, transition: 'height .3s',
+                            }} />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -146,7 +212,7 @@ export default function Evento() {
     const ocasionNombre = OCASIONES.find(o => o.id === ocasion)?.nombre
 
     try {
-      const prompt = `Sos un DJ profesional argentino experto en armar timelines musicales para eventos. Generá un plan musical para este evento:
+      const prompt = `Sos un DJ profesional argentino experto en armar timelines musicales con criterio de BPM. Generá un plan musical para este evento:
 
 DATOS DEL EVENTO:
 - Ocasión: ${ocasionNombre}
@@ -161,40 +227,52 @@ DATOS DEL EVENTO:
 
 CONTEXTO CULTURAL: En Argentina toda reunión incluye comida. Consideralo para estructurar el timeline (llegada/aperitivo → comida → sobremesa/baile según corresponda).
 
+REGLAS DE BPM — MUY IMPORTANTE:
+Un DJ profesional nunca salta más de 10-15 BPM entre canciones consecutivas. Seguí estas reglas:
+- Bloques de energía BAJA: canciones entre 70-95 BPM
+- Bloques de energía MEDIA: canciones entre 95-120 BPM  
+- Bloques de energía ALTA: canciones entre 120-140 BPM
+- Dentro de cada bloque, ordená las canciones con progresión gradual de BPM (de menor a mayor si el bloque sube, de mayor a menor si baja)
+- Entre bloques consecutivos, el último BPM del bloque anterior y el primero del siguiente no deben diferir más de 15 BPM
+- Indicá el BPM real y aproximado de cada canción
+
 CONSIDERACIONES DE DJ PROFESIONAL:
-- El horario de inicio afecta cuándo llega el pico de energía: si arranca de noche la gente ya viene predispuesta, si es tarde necesita más calentamiento.
-- Si hay pista de baile, construí el timeline hacia un pico bailable claro. Si no hay pista, mantené energía pareja y ambiente.
-- Si hay momento especial (cumpleaños, brindis, etc.), reservá una canción icónica para ese momento y mencionala explícitamente.
-- Adaptá el arco de energía a la energía deseada: si es "Muy tranquila" nunca llegues a alta, si es "Fiesta total" llegá rápido al pico.
+- El horario de inicio afecta cuándo llega el pico: noche = calentamiento corto, tarde = calentamiento largo
+- Si hay pista de baile, construí hacia un pico bailable claro con BPM alto
+- Si no hay pista, mantené BPM parejo sin picos extremos
+- Si hay momento especial, reservá una canción icónica y mencionala en la descripción del bloque
+- Adaptá el arco de BPM a la energía deseada
 
 REGLAS CRÍTICAS PARA LAS CANCIONES:
-1. Solo podés incluir canciones que EXISTEN REALMENTE y están disponibles en YouTube.
-2. Verificá que cada combinación título-artista sea correcta y real.
-3. Si no estás 100% seguro de que existe, NO la incluyas y elegí otra conocida.
-4. Preferí siempre hits conocidos y populares.
-5. Necesitás exactamente ${cantCanciones} canciones para cubrir ${form.duracion} sin silencios.
+1. Solo podés incluir canciones que EXISTEN REALMENTE en YouTube
+2. Verificá que cada combinación título-artista sea correcta y real
+3. Si no estás 100% seguro de que existe, NO la incluyas
+4. Preferí hits conocidos y populares
+5. Necesitás exactamente ${cantCanciones} canciones
 
 Respondé SOLO con JSON válido (sin texto extra, sin backticks):
 {
   "titulo": "nombre creativo para este evento",
   "duracion_total": "${form.duracion}",
-  "tip_dj": "consejo específico considerando el horario, la pista y el momento especial (máx 2 oraciones)",
+  "tip_dj": "consejo específico mencionando la estrategia de BPM y el arco de energía (máx 2 oraciones)",
   "bloques": [
     {
       "nombre": "nombre del bloque",
       "duracion": "X min",
       "energia": "baja/media/alta",
-      "descripcion": "qué suena, por qué en este momento y cómo se conecta con el siguiente bloque",
+      "bpm_rango": "XX-XX BPM",
+      "descripcion": "qué suena, por qué en este momento, cómo se conecta con el siguiente bloque y qué hace el BPM",
       "artistas": ["artista1", "artista2"],
       "canciones_sugeridas": [
-        { "titulo": "Nombre canción real - Artista real", "inicio": 15 }
+        { "titulo": "Nombre canción - Artista", "inicio": 15, "bpm": 95 }
       ]
     }
   ]
 }
 
 La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
-"inicio" = segundo donde empieza la música real saltando el intro. Si arranca directo ponés 0.`
+"inicio" = segundo donde empieza la música real. Si arranca directo ponés 0.
+"bpm" = BPM real aproximado de esa canción — respetá la progresión gradual.`
 
       const response = await fetch('/api/generar', {
         method: 'POST',
@@ -221,7 +299,14 @@ La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
         const ultimoGuion = texto.lastIndexOf(' - ')
         const titulo      = ultimoGuion !== -1 ? texto.slice(0, ultimoGuion).trim() : texto.trim()
         const artista     = ultimoGuion !== -1 ? texto.slice(ultimoGuion + 3).trim() : ''
-        return { titulo, artista, bloque: bloque.nombre, momento: bloque.nombre, energia: bloque.energia, inicio: typeof c === 'object' ? (c.inicio || 0) : 0 }
+        return {
+          titulo, artista,
+          bloque:  bloque.nombre,
+          momento: bloque.nombre,
+          energia: bloque.energia,
+          bpm:     typeof c === 'object' ? (c.bpm || null) : null,
+          inicio:  typeof c === 'object' ? (c.inicio || 0) : 0,
+        }
       })
     )
     sessionStorage.setItem('mandale_plan', JSON.stringify({
@@ -277,15 +362,14 @@ La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
         </button>
         <h2 style={{ fontSize: '26px', fontWeight: '300', marginBottom: '32px' }}>Contanos un poco más</h2>
 
-        {/* Preguntas base */}
         {[
-          { label: '¿Cuántas personas?',  key: 'personas', opts: ['1-5','6-15','16-30','30-60','60+'] },
-          { label: 'Edad promedio',        key: 'edad',     opts: EDADES },
-          { label: 'Energía deseada',      key: 'energia',  opts: ENERGIAS },
-          { label: '¿Cuánto dura?',        key: 'duracion', opts: DURACIONES },
-          { label: '¿A qué hora arranca?', key: 'horario',  opts: HORARIOS },
-          { label: '¿Hay pista de baile?', key: 'pista',    opts: PISTAS },
-          { label: '¿Hay algún momento especial?', key: 'momento', opts: MOMENTOS },
+          { label: '¿Cuántas personas?',           key: 'personas', opts: ['1-5','6-15','16-30','30-60','60+'] },
+          { label: 'Edad promedio',                 key: 'edad',     opts: EDADES },
+          { label: 'Energía deseada',               key: 'energia',  opts: ENERGIAS },
+          { label: '¿Cuánto dura?',                 key: 'duracion', opts: DURACIONES },
+          { label: '¿A qué hora arranca?',          key: 'horario',  opts: HORARIOS },
+          { label: '¿Hay pista de baile?',          key: 'pista',    opts: PISTAS },
+          { label: '¿Hay algún momento especial?',  key: 'momento',  opts: MOMENTOS },
         ].map(({ label, key, opts }) => (
           <div key={key} style={{ marginBottom: '28px' }}>
             <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>{label}</label>
@@ -295,7 +379,6 @@ La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
           </div>
         ))}
 
-        {/* Géneros */}
         <div style={{ marginBottom: '36px' }}>
           <label style={{ display: 'block', fontSize: '12px', color: '#666', marginBottom: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>Géneros musicales (podés elegir varios)</label>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -347,11 +430,12 @@ La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '14px' }}>
+          {/* Leyenda */}
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '14px' }}>
             {Object.entries(ENERGIA_COLOR).map(([k, color]) => (
               <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} />
-                <span style={{ fontSize: '11px', color: '#555' }}>{ENERGIA_LABEL[k]}</span>
+                <span style={{ fontSize: '11px', color: '#555' }}>{ENERGIA_LABEL[k]} · {BPM_RANGO[k]?.label}</span>
               </div>
             ))}
           </div>
@@ -362,7 +446,7 @@ La suma de canciones_sugeridas debe ser exactamente ${cantCanciones}.
             <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎵</div>
             <h3 style={{ fontSize: '20px', fontWeight: '400', marginBottom: '8px' }}>¿Listo para escuchar?</h3>
             <p style={{ color: '#666', fontSize: '13px', lineHeight: 1.7, maxWidth: '340px', margin: '0 auto 24px' }}>
-              Mandale Play reproduce tu plan completo con enganches automáticos entre canciones.
+              Mandale Play reproduce tu plan completo respetando la progresión de BPM entre canciones.
             </p>
             <button onClick={reproducirAhora} style={{ background: '#d4a843', color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px', fontSize: '16px', fontWeight: '700', cursor: 'pointer' }}>
               ▶ Reproducir ahora
