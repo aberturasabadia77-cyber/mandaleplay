@@ -1,426 +1,469 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Suspense } from 'react'
+
+import { useState } from 'react'
+
+const OCASIONES = [
+  { id: 'romantica', emoji: '🕯️', nombre: 'Velada romántica', sub: 'Para dos personas' },
+  { id: 'cumple',    emoji: '🎂', nombre: 'Cumpleaños',        sub: 'El festejado en el centro' },
+  { id: 'chicas',   emoji: '💃', nombre: 'Juntada de chicas', sub: 'Solo entre ellas' },
+  { id: 'after',    emoji: '🌙', nombre: 'After / Previa',    sub: 'Energía desde el arranque' },
+  { id: 'quincho',  emoji: '🔥', nombre: 'Quincho / Asado',   sub: 'Largo y relajado' },
+  { id: 'familiar', emoji: '👨‍👩‍👧', nombre: 'Reunión familiar', sub: 'Todas las edades' },
+  { id: 'parejas',  emoji: '👫', nombre: 'Juntada de parejas', sub: 'Grupos mixtos' },
+  { id: 'corp',     emoji: '💼', nombre: 'Corporativo',        sub: 'Profesional e inclusivo' },
+]
+
+const ENERGIAS   = ['Muy tranquila 😌', 'Relajada 🙂', 'Animada 🎉', 'Fiesta total 🔥']
+const EDADES     = ['18-25', '25-35', '35-50', '50+', 'Mixto']
+const GUSTOS     = ['Reggaeton', 'Pop latino', 'Rock', 'Electrónica', 'Cumbia', 'Clásicos 80s/90s', 'Trap/Urbano', 'Jazz/Soul', 'Internacional', 'Variado']
+const DURACIONES = ['1 hora', '2 horas', '3 horas', '4 horas']
+const HORARIOS   = ['Mañana (10-13)', 'Tarde (14-18)', 'Noche temprana (19-21)', 'Noche (22 en adelante)']
+const PISTAS     = ['Sí, hay pista', 'Puede pasar', 'No, es solo ambiente']
 
 const ENERGIA_COLOR = { baja: '#4ade80', media: '#facc15', alta: '#f97316' }
+const ENERGIA_BG    = { baja: '#052e16', media: '#1c1500', alta: '#1c0a00' }
+const ENERGIA_LABEL = { baja: 'Baja energía', media: 'Media energía', alta: 'Alta energía' }
+const BPM_RANGO     = { baja: { min: 70, max: 95 }, media: { min: 95, max: 120 }, alta: { min: 120, max: 140 } }
 
-// ── Dos bandejas: A y B alternadas ────────────────────────────────────────────
-// Mientras A reproduce, B carga en silencio el siguiente video
-// pausado en el segundo exacto de enganche (inicio).
-// Al terminar A → B sube volumen y arranca, A pasa a cargar el siguiente.
+// Colores neon metálicos
+const NEON_CYAN   = '#00f5ff'
+const NEON_VIOLET = '#8b5cf6'
+const NEON_MID    = '#6366f1'
 
-function PlayerInner() {
-  const router = useRouter()
+const parsearMinutos = (str = '') => {
+  const h = str.match(/(\d+)\s*h/)
+  const m = str.match(/(\d+)\s*min/)
+  return (h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0) || 30
+}
 
-  // Referencias de los dos iframes
-  const divA       = useRef(null)
-  const divB       = useRef(null)
-  const playerA    = useRef(null)
-  const playerB    = useRef(null)
-  const activa     = useRef('A')   // cuál bandeja está reproduciendo
-  const iniciando  = useRef(false)
-  const listos     = useRef(0)     // cuántos players están listos (espera los 2)
+const separarTituloArtista = (texto = '') => {
+  const i = texto.lastIndexOf(' - ')
+  return i !== -1
+    ? { titulo: texto.slice(0, i).trim(), artista: texto.slice(i + 3).trim() }
+    : { titulo: texto.trim(), artista: '' }
+}
 
-  const cancionesR = useRef([])
-  const indiceR    = useRef(0)
-  const skipTimerR = useRef(null)
-  const loadTimerR = useRef(null)
-  const fadeTimer  = useRef(null)
-  const progresoT  = useRef(null)
-  const prefetchCache = useRef({}) // { indice: videoId }
+// ── Timeline ──────────────────────────────────────────────────────────────────
+function Timeline({ bloques }) {
+  const [abierto, setAbierto] = useState(null)
+  const totalMin = bloques.reduce((s, b) => s + parsearMinutos(b.duracion), 0)
 
-  const [canciones,    setCanciones]    = useState([])
-  const [indiceActual, setIndiceActual] = useState(0)
-  const [nombreEvento, setNombreEvento] = useState('')
-  const [estado,       setEstado]       = useState('cargando')
-  const [progreso,     setProgreso]     = useState(0)
-
-  // Leer sessionStorage
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('mandale_plan')
-      if (!raw) return
-      const { canciones: lista, nombre } = JSON.parse(raw)
-      if (nombre) setNombreEvento(nombre)
-      if (lista?.length) { setCanciones(lista); cancionesR.current = lista }
-    } catch (e) { console.error(e) }
-  }, [])
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-  const getActivo   = () => activa.current === 'A' ? playerA.current : playerB.current
-  const getEspera   = () => activa.current === 'A' ? playerB.current : playerA.current
-
-  const limpiarTimers = () => {
-    clearTimeout(skipTimerR.current)
-    clearTimeout(loadTimerR.current)
-    clearTimeout(fadeTimer.current)
-    clearInterval(progresoT.current)
-  }
-
-  const agendarAutoSkip = (ms = 1500) => {
-    limpiarTimers()
-    skipTimerR.current = setTimeout(() => {
-      const sig = indiceR.current + 1
-      if (sig < cancionesR.current.length) cargarPorIndice(sig)
-    }, ms)
-  }
-
-  // Busca videoId y guarda en cache
-  const buscarVideoId = async (idx) => {
-    if (prefetchCache.current[idx]) return prefetchCache.current[idx]
-    const lista = cancionesR.current
-    if (idx < 0 || idx >= lista.length) return null
-    const c     = lista[idx]
-    const query = `${c.titulo} ${c.artista} audio`
-    try {
-      const res  = await fetch(`/api/buscar?q=${encodeURIComponent(query)}`)
-      const json = await res.json()
-      if (json.videoId) { prefetchCache.current[idx] = json.videoId }
-      return json.videoId || null
-    } catch { return null }
-  }
-
-  // Crossfade: baja el activo, sube el que espera
-  const crossfade = (duracion = 1500) => {
-    const activo = getActivo()
-    const espera = getEspera()
-    if (!activo || !espera) return
-
-    const pasos  = 20
-    const intervalo = duracion / pasos
-    let paso = 0
-
-    const tick = setInterval(() => {
-      paso++
-      const volEspera = Math.round((paso / pasos) * 100)
-      const volActivo = Math.round(((pasos - paso) / pasos) * 100)
-      try {
-        espera.setVolume(volEspera)
-        activo.setVolume(volActivo)
-      } catch {}
-      if (paso >= pasos) {
-        clearInterval(tick)
-        try { activo.pauseVideo(); activo.setVolume(0) } catch {}
-      }
-    }, intervalo)
-  }
-
-  // Pre-carga la bandeja en espera con el siguiente video
-  const precargarEnEspera = async (idx) => {
-    const espera  = getEspera()
-    const lista   = cancionesR.current
-    if (!espera || idx < 0 || idx >= lista.length) return
-
-    const videoId = await buscarVideoId(idx)
-    if (!videoId) return
-
-    const inicio = lista[idx].inicio || 0
-    try {
-      // Carga el video en silencio y pausado en el segundo de enganche
-      espera.setVolume(0)
-      espera.cueVideoById({ videoId, startSeconds: inicio })
-      console.log(`Bandeja ${activa.current === 'A' ? 'B' : 'A'} precargada: [${idx}] ${lista[idx].titulo}`)
-    } catch (e) { console.warn('Error precargando:', e) }
-  }
-
-  // Inicia el seguimiento de progreso y dispara la precarga al 70%
-  const iniciarProgreso = () => {
-    clearInterval(progresoT.current)
-    setProgreso(0)
-    let precargado = false
-
-    progresoT.current = setInterval(() => {
-      const player = getActivo()
-      if (!player) return
-      const tiempo = player.getCurrentTime?.() || 0
-      const total  = player.getDuration?.() || 1
-      const pct    = tiempo / total
-      setProgreso(pct * 100)
-
-      // Al 70% → precargar el siguiente en la bandeja en espera
-      if (pct > 0.7 && !precargado) {
-        precargado = true
-        const sig = indiceR.current + 1
-        precargarEnEspera(sig)
-      }
-
-      // Al 90% → hacer play en silencio para terminar de bufferear
-      if (pct > 0.9) {
-        const espera = getEspera()
-        try {
-          const s = espera?.getPlayerState?.()
-          if (s === 5) { // 5 = cued (listo para reproducir)
-            espera.playVideo()
-            espera.setVolume(0)
-          }
-        } catch {}
-      }
-    }, 800)
-  }
-
-  // Carga una canción en la bandeja activa con crossfade
-  const cargarPorIndice = async (idx, sinCrossfade = false) => {
-    const lista = cancionesR.current
-    if (idx < 0 || idx >= lista.length) return
-
-    limpiarTimers()
-    indiceR.current = idx
-    setIndiceActual(idx)
-    setProgreso(0)
-
-    const lista_c  = lista[idx]
-    const videoId  = await buscarVideoId(idx)
-
-    if (!videoId) {
-      setEstado('error')
-      agendarAutoSkip(1000)
-      return
-    }
-
-    const espera = getEspera()
-    const activo = getActivo()
-
-    // ¿El video ya está precargado en la bandeja en espera?
-    const yaPrecargado = prefetchCache.current[idx] &&
-      espera?.getPlayerState?.() !== undefined
-
-    if (!sinCrossfade && yaPrecargado) {
-      // Crossfade suave: espera ya tiene el video listo
-      setEstado('playing')
-      try {
-        espera.setVolume(0)
-        espera.playVideo()
-      } catch {}
-      crossfade(1200)
-      // Swap de bandejas
-      activa.current = activa.current === 'A' ? 'B' : 'A'
-      iniciarProgreso()
-    } else {
-      // Carga normal en la bandeja activa
-      setEstado('cargando')
-      try {
-        activo.setVolume(100)
-        activo.loadVideoById({ videoId, startSeconds: lista_c.inicio || 0 })
-      } catch {}
-
-      loadTimerR.current = setTimeout(() => {
-        const s = getActivo()?.getPlayerState?.()
-        if (s !== 1 && s !== 3) agendarAutoSkip(0)
-      }, 10000)
-    }
-
-    // Precarga inmediata del siguiente
-    setTimeout(() => precargarEnEspera(idx + 1), 2000)
-  }
-
-  // ── Init de los dos players ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (canciones.length === 0 || iniciando.current) return
-    iniciando.current = true
-
-    const onPlayerListo = () => {
-      listos.current++
-      if (listos.current < 2) return // esperar que los dos estén listos
-      // Los dos players están listos → arrancar
-      cargarPorIndice(0, true)
-      setTimeout(() => precargarEnEspera(1), 3000)
-    }
-
-    const crearPlayers = () => {
-      const config = (div, ref, esPrincipal) => {
-        ref.current = new window.YT.Player(div, {
-          height: '100%', width: '100%',
-          playerVars: {
-            autoplay: esPrincipal ? 1 : 0,
-            controls: 0, rel: 0,
-            modestbranding: 1, iv_load_policy: 3,
-            fs: 0, disablekb: 1, playsinline: 1,
-          },
-          events: {
-            onReady: onPlayerListo,
-            onStateChange: ({ data }) => {
-              const S = window.YT.PlayerState
-              // Solo escuchar eventos del player ACTIVO
-              const esActivo = (esPrincipal && activa.current === 'A') ||
-                               (!esPrincipal && activa.current === 'B')
-              if (!esActivo) return
-
-              if (data === S.PLAYING) {
-                limpiarTimers()
-                setEstado('playing')
-                iniciarProgreso()
-              }
-              if (data === S.PAUSED) { clearInterval(progresoT.current) }
-              if (data === S.ENDED) {
-                // Si la bandeja en espera ya tiene el siguiente → crossfade
-                const sig = indiceR.current + 1
-                if (sig < cancionesR.current.length) {
-                  cargarPorIndice(sig)
-                }
-              }
-            },
-            onError: () => {
-              const esActivo = (esPrincipal && activa.current === 'A') ||
-                               (!esPrincipal && activa.current === 'B')
-              if (!esActivo) return
-              setEstado('error')
-              delete prefetchCache.current[indiceR.current]
-              agendarAutoSkip(800)
-            },
-          },
-        })
-      }
-
-      crearPlayers_inner = () => {
-        config(divA.current, playerA, true)
-        config(divB.current, playerB, false)
-      }
-      crearPlayers_inner()
-    }
-
-    let crearPlayers_inner = () => {}
-
-    if (window.YT?.Player) {
-      crearPlayers()
-    } else {
-      const tag = document.createElement('script')
-      tag.src   = 'https://www.youtube.com/iframe_api'
-      document.head.appendChild(tag)
-      window.onYouTubeIframeAPIReady = crearPlayers
-    }
-
-    return limpiarTimers
-  }, [canciones])
-
-  const actual      = canciones[indiceActual] || {}
-  const energyColor = ENERGIA_COLOR[actual.energia] || '#d4a843'
+  // Colores neon para el timeline
+  const timelineColors = [NEON_CYAN, '#22d3ee', NEON_MID, NEON_VIOLET, '#a855f7', '#ec4899']
 
   return (
-    <main style={{ background: '#0a0a0a', minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #1a1a1a', flexShrink: 0 }}>
-        <button onClick={() => router.back()} style={{ background: 'none', border: '1px solid #333', color: '#888', padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px' }}>← Plan</button>
-        <span style={{ color: '#888', fontSize: '13px', flex: 1, textAlign: 'center', padding: '0 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreEvento}</span>
-        <span style={{ color: '#555', fontSize: '13px', flexShrink: 0 }}>{indiceActual + 1} / {canciones.length}</span>
-      </div>
-
-      {/* Dos iframes — solo se ve el activo */}
-      <div style={{ position: 'relative', width: '100%', maxWidth: '640px', margin: '0 auto', flexShrink: 0 }}>
-        <div style={{ paddingTop: '56.25%', position: 'relative', background: '#111' }}>
-
-          {/* Bandeja A */}
-          <div ref={divA} style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-            zIndex: activa.current === 'A' ? 2 : 1,
-          }} />
-
-          {/* Bandeja B */}
-          <div ref={divB} style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-            zIndex: activa.current === 'B' ? 2 : 1,
-          }} />
-
-          {/* Overlays */}
-          {estado === 'error' && (
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,10,10,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
-              <div style={{ fontSize: '34px', marginBottom: '10px' }}>⚠️</div>
-              <p style={{ color: '#aaa', fontSize: '14px', margin: '0 0 6px' }}>Video no disponible</p>
-              <p style={{ color: '#555', fontSize: '12px' }}>Pasando a la siguiente canción...</p>
-            </div>
-          )}
-          {estado === 'cargando' && (
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,10,10,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, pointerEvents: 'none' }}>
-              <span style={{ color: '#d4a843', fontSize: '14px', letterSpacing: '1px' }}>Buscando...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Barra de progreso */}
-        <div style={{ height: '3px', background: '#1a1a1a' }}>
-          <div style={{ height: '100%', background: energyColor, width: `${progreso}%`, transition: 'width .8s linear' }} />
-        </div>
-      </div>
-
-      {/* Info */}
-      <div style={{ textAlign: 'center', padding: '16px 20px 4px' }}>
-        {actual.bloque && (
-          <div style={{ fontSize: '10px', letterSpacing: '2px', marginBottom: '6px', textTransform: 'uppercase', color: energyColor }}>
-            {actual.bloque}
-          </div>
-        )}
-        <div style={{ fontSize: '19px', fontWeight: '300', lineHeight: 1.3, marginBottom: '6px' }}>
-          {actual.titulo} <span style={{ color: '#555' }}>—</span> {actual.artista}
-        </div>
-        {actual.bpm && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#111', border: `1px solid ${energyColor}44`, borderRadius: '100px', padding: '4px 12px' }}>
-            <span style={{ fontSize: '10px', color: energyColor }}>♩</span>
-            <span style={{ fontSize: '12px', color: energyColor, fontWeight: '600' }}>{actual.bpm} BPM</span>
-          </div>
-        )}
-      </div>
-
-      {/* Controles */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '28px', alignItems: 'center', padding: '14px 0 18px' }}>
-        <button onClick={() => cargarPorIndice(indiceActual - 1, true)} disabled={indiceActual === 0}
-          style={{ background: 'none', border: 'none', color: indiceActual === 0 ? '#2a2a2a' : '#666', fontSize: '26px', cursor: indiceActual === 0 ? 'default' : 'pointer' }}>⏮</button>
-        <button onClick={() => {
-          const p = getActivo()
-          const s = p?.getPlayerState?.()
-          if (s === 1) p.pauseVideo()
-          else p?.playVideo()
-        }} style={{ background: energyColor, border: 'none', color: '#000', width: '58px', height: '58px', borderRadius: '50%', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 20px ${energyColor}44`, transition: 'background .3s' }}>▶</button>
-        <button onClick={() => cargarPorIndice(indiceActual + 1, true)} disabled={indiceActual === canciones.length - 1}
-          style={{ background: 'none', border: 'none', color: indiceActual === canciones.length - 1 ? '#2a2a2a' : '#666', fontSize: '26px', cursor: indiceActual === canciones.length - 1 ? 'default' : 'pointer' }}>⏭</button>
-      </div>
-
-      {/* Cola */}
-      <div style={{ flex: 1, overflowY: 'auto', maxWidth: '640px', width: '100%', margin: '0 auto', padding: '0 12px 40px' }}>
-        <div style={{ fontSize: '10px', color: '#444', letterSpacing: '2px', marginBottom: '10px', padding: '0 4px' }}>
-          COLA · {canciones.length} CANCIONES
-        </div>
-        {canciones.map((c, i) => {
-          const esActual = i === indiceActual
-          const color    = ENERGIA_COLOR[c.energia] || '#d4a843'
-          const enCache  = !!prefetchCache.current[i]
+    <div>
+      {/* Barra */}
+      <div style={{ display: 'flex', borderRadius: '12px', overflow: 'hidden', height: '52px', marginBottom: '8px', gap: '2px' }}>
+        {bloques.map((b, i) => {
+          const pct   = (parsearMinutos(b.duracion) / totalMin) * 100
+          const color = timelineColors[i % timelineColors.length]
+          const open  = abierto === i
           return (
-            <div key={i} onClick={() => cargarPorIndice(i, true)} style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              padding: '9px 10px', borderRadius: '8px', cursor: 'pointer',
-              background: esActual ? '#1a1400' : 'transparent',
-              borderLeft: esActual ? `3px solid ${color}` : '3px solid transparent',
-              marginBottom: '1px', transition: 'background .15s',
-            }}
-              onMouseEnter={e => { if (!esActual) e.currentTarget.style.background = '#141414' }}
-              onMouseLeave={e => { if (!esActual) e.currentTarget.style.background = 'transparent' }}
-            >
-              <span style={{ color: '#333', fontSize: '11px', minWidth: '18px', textAlign: 'right' }}>{i + 1}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13px', color: esActual ? '#fff' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {c.titulo} <span style={{ color: '#444' }}>—</span> {c.artista}
-                </div>
-                <div style={{ fontSize: '10px', color: '#444' }}>{c.bloque}</div>
-              </div>
-              {c.bpm && (
-                <span style={{ fontSize: '10px', color: esActual ? color : '#333', flexShrink: 0, fontWeight: esActual ? '600' : '400' }}>
-                  {c.bpm}♩
+            <div key={i} onClick={() => setAbierto(open ? null : i)} title={b.nombre}
+              style={{
+                width: `${pct}%`, background: `linear-gradient(180deg, ${color}cc, ${color}88)`,
+                opacity: open ? 1 : 0.8, cursor: 'pointer', transition: 'opacity .2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '4px',
+                boxShadow: open ? `inset 0 0 20px rgba(255,255,255,0.2)` : 'none',
+              }}>
+              {pct > 12 && (
+                <span style={{ fontSize: '9px', fontWeight: '700', color: '#000', textAlign: 'center', padding: '0 4px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                  {b.nombre.split(' ').slice(0, 2).join(' ')}
                 </span>
               )}
-              {enCache && !esActual && <span style={{ fontSize: '7px', color: '#2a2a2a' }} title="Precargado">●</span>}
-              {esActual && <span style={{ color, fontSize: '8px' }}>●</span>}
             </div>
           )
         })}
       </div>
-    </main>
+
+      {/* Duraciones */}
+      <div style={{ display: 'flex', gap: '2px', marginBottom: '24px' }}>
+        {bloques.map((b, i) => {
+          const pct   = (parsearMinutos(b.duracion) / totalMin) * 100
+          const color = timelineColors[i % timelineColors.length]
+          return (
+            <div key={i} style={{ width: `${pct}%`, minWidth: '4px' }}>
+              <div style={{ fontSize: '9px', color, fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.duracion}</div>
+              {pct > 10 && <div style={{ fontSize: '8px', color: '#444' }}>{BPM_RANGO[b.energia]?.min}-{BPM_RANGO[b.energia]?.max} BPM</div>}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Bloques expandibles */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {bloques.map((b, i) => {
+          const color = timelineColors[i % timelineColors.length]
+          const open  = abierto === i
+          const bpms  = b.canciones_sugeridas?.map(c => typeof c === 'object' ? c.bpm : null).filter(Boolean) || []
+          const bpmMin = bpms.length ? Math.min(...bpms) : null
+          const bpmMax = bpms.length ? Math.max(...bpms) : null
+
+          return (
+            <div key={i} onClick={() => setAbierto(open ? null : i)} style={{
+              borderRadius: '14px',
+              border: `1px solid ${open ? color + '88' : 'rgba(255,255,255,0.06)'}`,
+              background: open ? `linear-gradient(135deg, ${color}11, ${color}06)` : 'rgba(255,255,255,0.02)',
+              overflow: 'hidden', cursor: 'pointer', transition: 'all .2s',
+              boxShadow: open ? `0 0 20px ${color}22` : 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px' }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <span>Bloque {i + 1} · {b.duracion}</span>
+                    <span style={{ color }}>● {ENERGIA_LABEL[b.energia] || b.energia}</span>
+                    {bpmMin && <span style={{ color: '#444' }}>♩ {bpmMin === bpmMax ? bpmMin : `${bpmMin}→${bpmMax}`} BPM</span>}
+                  </div>
+                  <div style={{ fontSize: '15px', color: open ? '#fff' : '#bbb', fontWeight: '500' }}>{b.nombre}</div>
+                </div>
+                <div style={{ fontSize: '11px', color: '#444' }}>{open ? '▲' : '▼'}</div>
+              </div>
+
+              {open && (
+                <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${color}22` }}>
+                  <p style={{ fontSize: '13px', color: '#666', marginBottom: '14px', lineHeight: 1.7, marginTop: '12px' }}>{b.descripcion}</p>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                    {b.artistas?.map((a, j) => (
+                      <span key={j} style={{ fontSize: '11px', background: `${color}11`, border: `1px solid ${color}44`, color, padding: '3px 10px', borderRadius: '100px' }}>{a}</span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {b.canciones_sugeridas?.map((c, j) => {
+                      const cancion = typeof c === 'string' ? { titulo: c, bpm: null, inicio: 0 } : c
+                      return (
+                        <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <span style={{ color, fontSize: '10px', flexShrink: 0 }}>♪</span>
+                          <span style={{ fontSize: '13px', color: '#777', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cancion.titulo}</span>
+                          {cancion.bpm && <span style={{ fontSize: '11px', color, flexShrink: 0, fontWeight: '600' }}>{cancion.bpm} BPM</span>}
+                          {cancion.inicio > 0 && <span style={{ fontSize: '10px', color: '#333', flexShrink: 0 }}>▶{cancion.inicio}s</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {bpms.length > 1 && (
+                    <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '10px', color: '#333', marginBottom: '6px' }}>Progresión de energía</div>
+                      <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '24px' }}>
+                        {bpms.map((bpm, j) => {
+                          const altura = Math.round(((bpm - 60) / (145 - 60)) * 100)
+                          return <div key={j} title={`${bpm} BPM`} style={{ flex: 1, background: color, borderRadius: '2px 2px 0 0', height: `${Math.max(altura, 10)}%`, opacity: 0.7 }} />
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
-export default function PlayerPage() {
-  return (
-    <Suspense fallback={<div style={{ background: '#0a0a0a', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontSize: '14px' }}>Cargando player...</div>}>
-      <PlayerInner />
-    </Suspense>
+// ── Página ────────────────────────────────────────────────────────────────────
+export default function Evento() {
+  const [paso,    setPaso]    = useState(0)
+  const [ocasion, setOcasion] = useState(null)
+  const [form,    setForm]    = useState({ personas: '', edad: '', energia: '', gustos: [], duracion: '', horario: '', pista: '' })
+  const [plan,    setPlan]    = useState(null)
+  const [error,   setError]   = useState(null)
+  const [verificando, setVerificando] = useState(false)
+
+  const toggleGusto = (g) => setForm(f => ({ ...f, gustos: f.gustos.includes(g) ? f.gustos.filter(x => x !== g) : [...f.gustos, g] }))
+  const calcularCanciones = (d) => Math.ceil(({ '1 hora': 1, '2 horas': 2, '3 horas': 3, '4 horas': 4 }[d] || 2) * 60 / 3.5)
+
+  const verificarBPMs = async (bloques) => {
+    const bloquesVerificados = await Promise.all(
+      bloques.map(async (bloque) => {
+        const rango = BPM_RANGO[bloque.energia] || { min: 70, max: 140 }
+        const cancionesVerificadas = await Promise.all(
+          (bloque.canciones_sugeridas || []).map(async (c) => {
+            const texto = typeof c === 'string' ? c : (c.titulo || '')
+            const { titulo, artista } = separarTituloArtista(texto)
+            try {
+              const res  = await fetch(`/api/bpm?titulo=${encodeURIComponent(titulo)}&artista=${encodeURIComponent(artista)}`)
+              const data = await res.json()
+              const bpmReal = data.bpm || (typeof c === 'object' ? c.bpm : null)
+              return { ...(typeof c === 'object' ? c : { titulo: texto, inicio: 0 }), bpm: bpmReal }
+            } catch {
+              return typeof c === 'object' ? c : { titulo: texto, inicio: 0, bpm: null }
+            }
+          })
+        )
+        const conBpm    = cancionesVerificadas.filter(c => c.bpm)
+        const sinBpm    = cancionesVerificadas.filter(c => !c.bpm)
+        const ordenadas = [...conBpm.sort((a, b) => a.bpm - b.bpm), ...sinBpm]
+        const fueraDeRango = conBpm.some(c => c.bpm < rango.min - 15 || c.bpm > rango.max + 15)
+        return { ...bloque, canciones_sugeridas: ordenadas, bpm_verificado: !fueraDeRango }
+      })
+    )
+    return bloquesVerificados
+  }
+
+  const generarPlan = async () => {
+    setPaso(2); setError(null)
+    const cantCanciones = calcularCanciones(form.duracion)
+    const ocasionNombre = OCASIONES.find(o => o.id === ocasion)?.nombre
+    try {
+      const prompt = `Sos un DJ profesional argentino experto en timelines musicales con criterio de BPM. Generá un plan musical para este evento:
+
+DATOS DEL EVENTO:
+- Ocasión: ${ocasionNombre}
+- Personas: ${form.personas}
+- Rango de edad: ${form.edad}
+- Energía deseada: ${form.energia}
+- Gustos musicales: ${form.gustos.join(', ')}
+- Duración total: ${form.duracion}
+- Horario de inicio: ${form.horario}
+- ¿Hay pista de baile?: ${form.pista}
+
+CONTEXTO CULTURAL: En Argentina toda reunión incluye comida. Estructurá el timeline considerando llegada/aperitivo → comida → sobremesa/baile según corresponda.
+
+REGLAS DE BPM — CRÍTICO:
+- Bloques de energía BAJA: canciones entre 70-95 BPM
+- Bloques de energía MEDIA: canciones entre 95-120 BPM
+- Bloques de energía ALTA: canciones entre 120-140 BPM
+- Dentro de cada bloque, progresión GRADUAL (nunca más de 10-15 BPM de salto entre canciones)
+- Entre bloques, diferencia máxima de 15 BPM
+- Indicá el BPM REAL y preciso de cada canción
+
+CONSIDERACIONES DE DJ:
+- Horario afecta el pico: noche = calentamiento corto, tarde = calentamiento largo
+- Con pista: construí hacia pico bailable con BPM alto
+- Sin pista: BPM parejo, sin picos extremos
+
+REGLAS CANCIONES REALES:
+1. Solo canciones que EXISTEN en YouTube — verificá mentalmente antes de incluir
+2. Combinación título-artista debe ser 100% correcta
+3. Preferí hits conocidos y populares
+4. Necesitás exactamente ${cantCanciones} canciones
+
+Respondé SOLO con JSON válido (sin texto extra, sin backticks):
+{
+  "titulo": "nombre creativo",
+  "duracion_total": "${form.duracion}",
+  "tip_dj": "consejo mencionando estrategia de BPM y arco de energía (máx 2 oraciones)",
+  "bloques": [
+    {
+      "nombre": "nombre del bloque",
+      "duracion": "X min",
+      "energia": "baja/media/alta",
+      "bpm_rango": "XX-XX BPM",
+      "descripcion": "qué suena, por qué en este momento, cómo conecta con el siguiente",
+      "artistas": ["artista1", "artista2"],
+      "canciones_sugeridas": [
+        { "titulo": "Nombre canción - Artista", "inicio": 15, "bpm": 95 }
+      ]
+    }
+  ]
+}
+
+Suma de canciones_sugeridas = exactamente ${cantCanciones}.
+"inicio" = segundo donde empieza la música real (0 si arranca directo).
+"bpm" = BPM real de esa canción, respetando progresión gradual dentro del bloque.`
+
+      const response = await fetch('/api/generar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+      const data   = await response.json()
+      if (data.error) throw new Error(data.error)
+      const text   = data.content?.find(b => b.type === 'text')?.text || ''
+      const clean  = text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+
+      setVerificando(true)
+      const bloquesVerificados = await verificarBPMs(parsed.bloques || [])
+      setPlan({ ...parsed, bloques: bloquesVerificados })
+      setVerificando(false)
+      setPaso(3)
+    } catch (e) {
+      setError('Hubo un error generando el plan. Intentá de nuevo.')
+      setVerificando(false)
+      setPaso(1)
+    }
+  }
+
+  const reproducirAhora = () => {
+    const canciones = plan.bloques.flatMap(bloque =>
+      (bloque.canciones_sugeridas || []).map(c => {
+        const texto = typeof c === 'string' ? c : (c.titulo || '')
+        const { titulo, artista } = separarTituloArtista(texto)
+        return { titulo, artista, bloque: bloque.nombre, momento: bloque.nombre, energia: bloque.energia, bpm: typeof c === 'object' ? (c.bpm || null) : null, inicio: typeof c === 'object' ? (c.inicio || 0) : 0 }
+      })
+    )
+    sessionStorage.setItem('mandale_plan', JSON.stringify({ canciones, nombre: plan.titulo || '', bloques: plan.bloques }))
+    window.location.href = '/player'
+  }
+
+  const formularioCompleto = ocasion && form.personas && form.edad && form.energia && form.gustos.length > 0 && form.duracion && form.horario && form.pista
+
+  // Estilos neon metálicos
+  const s = {
+    main: { minHeight: '100vh', background: '#060612', color: '#fff', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' },
+    btnActivo: {
+      padding: '10px 20px', borderRadius: '100px',
+      background: `linear-gradient(135deg, ${NEON_CYAN}, ${NEON_VIOLET})`,
+      border: 'none', color: '#000', cursor: 'pointer', fontSize: '14px', fontWeight: '700',
+      boxShadow: `0 0 16px rgba(0,245,255,0.4)`, transition: 'all .15s',
+    },
+    btnInactivo: {
+      padding: '10px 20px', borderRadius: '100px',
+      border: '1px solid rgba(255,255,255,0.1)',
+      background: 'rgba(255,255,255,0.03)', color: '#888',
+      cursor: 'pointer', fontSize: '14px', fontWeight: '400', transition: 'all .15s',
+    },
+    label: { display: 'block', fontSize: '12px', color: '#555', marginBottom: '12px', letterSpacing: '2px', textTransform: 'uppercase' },
+    volver: { background: 'none', border: '1px solid rgba(255,255,255,0.1)', color: '#555', padding: '8px 16px', borderRadius: '100px', fontSize: '13px', cursor: 'pointer', marginBottom: '40px' },
+  }
+
+  const btnStyle = (activo) => activo ? s.btnActivo : s.btnInactivo
+
+  // PASO 0
+  if (paso === 0) return (
+    <main style={s.main}>
+      <style>{`.oc:hover { border-color: ${NEON_CYAN} !important; background: rgba(0,245,255,0.05) !important; box-shadow: 0 0 20px rgba(0,245,255,0.1) !important; }`}</style>
+      <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+        <button onClick={() => window.location.href = '/'} style={s.volver}>← Volver</button>
+        <h1 style={{ fontSize: 'clamp(28px,5vw,42px)', fontWeight: '300', marginBottom: '8px', lineHeight: 1.2 }}>
+          ¿Qué estás{' '}
+          <em style={{ background: `linear-gradient(135deg, ${NEON_CYAN}, ${NEON_VIOLET})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontStyle: 'italic' }}>festejando?</em>
+        </h1>
+        <p style={{ color: '#555', marginBottom: '40px', fontSize: '15px' }}>Elegí la ocasión y la IA arma el plan musical perfecto.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px' }}>
+          {OCASIONES.map(o => (
+            <button key={o.id} className="oc" onClick={() => { setOcasion(o.id); setPaso(1) }}
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '20px 16px', cursor: 'pointer', textAlign: 'left', transition: 'all .2s', color: '#fff' }}>
+              <div style={{ fontSize: '28px', marginBottom: '10px' }}>{o.emoji}</div>
+              <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '4px' }}>{o.nombre}</div>
+              <div style={{ fontSize: '12px', color: '#555' }}>{o.sub}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </main>
   )
+
+  // PASO 1
+  if (paso === 1) return (
+    <main style={s.main}>
+      <div style={{ maxWidth: '560px', margin: '0 auto' }}>
+        <button onClick={() => setPaso(0)} style={s.volver}>
+          ← {OCASIONES.find(o => o.id === ocasion)?.emoji} {OCASIONES.find(o => o.id === ocasion)?.nombre}
+        </button>
+        <h2 style={{ fontSize: '26px', fontWeight: '300', marginBottom: '32px' }}>Contanos un poco más</h2>
+
+        {[
+          { label: '¿Cuántas personas?',   key: 'personas', opts: ['1-5','6-15','16-30','30-60','60+'] },
+          { label: 'Edad promedio',         key: 'edad',     opts: EDADES },
+          { label: 'Energía deseada',       key: 'energia',  opts: ENERGIAS },
+          { label: '¿Cuánto dura?',         key: 'duracion', opts: DURACIONES },
+          { label: '¿A qué hora arranca?',  key: 'horario',  opts: HORARIOS },
+          { label: '¿Hay pista de baile?',  key: 'pista',    opts: PISTAS },
+        ].map(({ label, key, opts }) => (
+          <div key={key} style={{ marginBottom: '28px' }}>
+            <label style={s.label}>{label}</label>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {opts.map(o => <button key={o} onClick={() => setForm(f => ({ ...f, [key]: o }))} style={btnStyle(form[key] === o)}>{o}</button>)}
+            </div>
+          </div>
+        ))}
+
+        <div style={{ marginBottom: '36px' }}>
+          <label style={s.label}>Géneros musicales (podés elegir varios)</label>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {GUSTOS.map(g => <button key={g} onClick={() => toggleGusto(g)} style={btnStyle(form.gustos.includes(g))}>{g}</button>)}
+          </div>
+        </div>
+
+        {error && <p style={{ color: '#f87171', fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+
+        <button onClick={generarPlan} disabled={!formularioCompleto} style={{
+          width: '100%', padding: '16px',
+          background: formularioCompleto ? `linear-gradient(135deg, ${NEON_CYAN}, ${NEON_VIOLET})` : 'rgba(255,255,255,0.05)',
+          color: formularioCompleto ? '#000' : '#333',
+          border: 'none', borderRadius: '100px', fontSize: '16px', fontWeight: '700',
+          cursor: formularioCompleto ? 'pointer' : 'not-allowed',
+          boxShadow: formularioCompleto ? `0 0 30px rgba(0,245,255,0.3)` : 'none',
+          transition: 'all .2s',
+        }}>✨ Generar mi plan musical</button>
+      </div>
+    </main>
+  )
+
+  // PASO 2
+  if (paso === 2) return (
+    <main style={{ ...s.main, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '20px' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <div style={{ width: '48px', height: '48px', border: `3px solid rgba(0,245,255,0.2)`, borderTop: `3px solid ${NEON_CYAN}`, borderRadius: '50%', animation: 'spin 1s linear infinite', boxShadow: `0 0 20px rgba(0,245,255,0.3)` }} />
+      <p style={{ color: '#888', fontSize: '16px' }}>
+        {verificando ? '🎵 Verificando BPMs reales...' : 'La IA está armando tu plan musical...'}
+      </p>
+      {verificando && <p style={{ color: '#444', fontSize: '13px' }}>Consultando base de datos de tempo</p>}
+    </main>
+  )
+
+  // PASO 3
+  if (paso === 3 && plan) {
+    const totalCanciones = plan.bloques?.reduce((s, b) => s + (b.canciones_sugeridas?.length || 0), 0)
+    const bloquesConBpmFuera = plan.bloques?.filter(b => b.bpm_verificado === false).length || 0
+    return (
+      <main style={s.main}>
+        <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+          <button onClick={() => setPaso(1)} style={s.volver}>← Volver</button>
+
+          <div style={{ marginBottom: '28px' }}>
+            <div style={{ fontSize: '11px', background: `linear-gradient(135deg, ${NEON_CYAN}, ${NEON_VIOLET})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>Tu plan musical</div>
+            <h2 style={{ fontSize: '26px', fontWeight: '400', marginBottom: '8px', lineHeight: 1.2 }}>{plan.titulo}</h2>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' }}>
+              <span style={{ fontSize: '13px', color: '#555' }}>⏱ {plan.duracion_total}</span>
+              <span style={{ fontSize: '13px', color: '#555' }}>🎵 {totalCanciones} canciones</span>
+              <span style={{ fontSize: '13px', color: '#555' }}>📦 {plan.bloques?.length} bloques</span>
+              <span style={{ fontSize: '13px', color: NEON_CYAN }}>✓ BPMs verificados</span>
+            </div>
+            {bloquesConBpmFuera > 0 && (
+              <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px' }}>
+                <p style={{ fontSize: '12px', color: '#f97316', margin: 0 }}>⚠ {bloquesConBpmFuera} bloque{bloquesConBpmFuera > 1 ? 's' : ''} con canciones reordenadas para mejor flujo de BPM.</p>
+              </div>
+            )}
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid rgba(0,245,255,0.15)`, borderRadius: '12px', padding: '14px 16px', borderLeft: `3px solid ${NEON_CYAN}` }}>
+              <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>🎧 Tip del DJ</p>
+              <p style={{ fontSize: '13px', color: '#888', lineHeight: 1.7, margin: 0 }}>{plan.tip_dj}</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '14px' }}>
+            {Object.entries(ENERGIA_COLOR).map(([k, color]) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
+                <span style={{ fontSize: '11px', color: '#555' }}>{ENERGIA_LABEL[k]} · {BPM_RANGO[k]?.min}-{BPM_RANGO[k]?.max} BPM</span>
+              </div>
+            ))}
+          </div>
+
+          <Timeline bloques={plan.bloques || []} />
+
+          <div style={{ marginTop: '36px', background: `linear-gradient(135deg, rgba(0,245,255,0.05), rgba(139,92,246,0.05))`, border: `1px solid rgba(0,245,255,0.15)`, borderRadius: '20px', padding: '32px', textAlign: 'center', boxShadow: `0 0 40px rgba(0,245,255,0.08)` }}>
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎵</div>
+            <h3 style={{ fontSize: '20px', fontWeight: '400', marginBottom: '8px' }}>¿Listo para escuchar?</h3>
+            <p style={{ color: '#555', fontSize: '13px', lineHeight: 1.7, maxWidth: '340px', margin: '0 auto 24px' }}>
+              Plan con BPMs verificados y progresión de energía profesional.
+            </p>
+            <button onClick={reproducirAhora} style={{
+              background: `linear-gradient(135deg, ${NEON_CYAN}, ${NEON_VIOLET})`,
+              color: '#000', border: 'none', padding: '14px 36px', borderRadius: '100px',
+              fontSize: '16px', fontWeight: '700', cursor: 'pointer',
+              boxShadow: `0 0 30px rgba(0,245,255,0.4)`,
+            }}>▶ Reproducir ahora</button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  return null
 }
