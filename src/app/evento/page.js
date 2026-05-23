@@ -1,4 +1,5 @@
 'use client'
+import { useRouter } from 'next/navigation'
 
 import { useState } from 'react'
 
@@ -165,6 +166,7 @@ function Timeline({ bloques }) {
 
 // ── Página ────────────────────────────────────────────────────────────────────
 export default function Evento() {
+  const router = useRouter()
   const [paso,    setPaso]    = useState(0)
   const [ocasion, setOcasion] = useState(null)
   const [form,    setForm]    = useState({ personas: '', edad: '', energia: '', gustos: [], duracion: '', horario: '', pista: '' })
@@ -297,7 +299,7 @@ Suma de canciones_sugeridas = exactamente ${cantCanciones}.
       })
     )
     sessionStorage.setItem('mandale_plan', JSON.stringify({ canciones, nombre: plan.titulo || '', bloques: plan.bloques }))
-    window.location.href = '/player'
+    router.push('/player')
   }
 
   const formularioCompleto = ocasion && form.personas && form.edad && form.energia && form.gustos.length > 0 && form.duracion && form.horario && form.pista
