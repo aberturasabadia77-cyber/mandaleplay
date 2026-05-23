@@ -1,0 +1,60 @@
+export default function Terminos() {
+  return (
+    <main style={{ minHeight: '100vh', background: '#060612', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: '60px 24px' }}>
+      <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+        <a href="/" style={{ color: '#00f5ff', fontSize: '13px', textDecoration: 'none', display: 'block', marginBottom: '40px' }}>← Volver a Mandale Play</a>
+
+        <h1 style={{ fontSize: '32px', fontWeight: '300', marginBottom: '8px' }}>Términos y Condiciones</h1>
+        <p style={{ color: '#444', fontSize: '13px', marginBottom: '48px' }}>Última actualización: Mayo 2026</p>
+
+        {[
+          {
+            titulo: '1. Acerca del servicio',
+            texto: `Mandale Play es una herramienta de planificación musical asistida por inteligencia artificial. El servicio genera sugerencias de planes musicales personalizados para eventos sociales, basándose en la información que el usuario provee voluntariamente.
+
+Mandale Play no almacena datos personales, no requiere registro y no cobra por el uso del servicio en su versión actual.`
+          },
+          {
+            titulo: '2. Uso del contenido de YouTube',
+            texto: `Mandale Play reproduce contenido de YouTube mediante la YouTube IFrame API, conforme a los Términos de Servicio de YouTube (youtube.com/t/terms). El contenido reproducido pertenece a sus respectivos titulares de derechos. Mandale Play no aloja, almacena ni distribuye contenido musical propio.
+
+El uso de la YouTube IFrame API está autorizado por YouTube/Google para sitios web y aplicaciones que cumplan sus políticas de uso.`
+          },
+          {
+            titulo: '3. Contenido generado por IA',
+            texto: `Los planes musicales son generados por un modelo de inteligencia artificial (Claude, de Anthropic). Las sugerencias son orientativas y pueden contener errores, como títulos o artistas incorrectos. Mandale Play no garantiza la exactitud del contenido generado.
+
+Los BPMs son verificados mediante la API de GetSongBPM (getsongbpm.com), pero tampoco se garantiza su precisión absoluta.`
+          },
+          {
+            titulo: '4. Limitación de responsabilidad',
+            texto: `Mandale Play se provee "tal como está", sin garantías de ningún tipo. No nos hacemos responsables por interrupciones del servicio, contenido de terceros reproducido a través de YouTube, ni por el uso que los usuarios hagan de los planes generados.
+
+El servicio puede cambiar, suspenderse o discontinuarse en cualquier momento sin previo aviso.`
+          },
+          {
+            titulo: '5. Propiedad intelectual',
+            texto: `El diseño, código y experiencia de usuario de Mandale Play son propiedad de sus creadores. Queda prohibida su reproducción total o parcial sin autorización expresa.
+
+El contenido musical reproducido pertenece a sus respectivos titulares. Mandale Play no reclama derechos sobre dicho contenido.`
+          },
+          {
+            titulo: '6. Modificaciones',
+            texto: `Estos términos pueden actualizarse en cualquier momento. El uso continuado del servicio implica la aceptación de los términos vigentes en el momento del acceso.`
+          },
+          {
+            titulo: '7. Contacto',
+            texto: `Para consultas sobre estos términos podés escribirnos a través de la información de contacto disponible en el sitio.`
+          },
+        ].map((s, i) => (
+          <div key={i} style={{ marginBottom: '36px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#00f5ff', marginBottom: '12px' }}>{s.titulo}</h2>
+            {s.texto.split('\n\n').map((p, j) => (
+              <p key={j} style={{ fontSize: '14px', color: '#888', lineHeight: 1.8, marginBottom: '12px' }}>{p}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </main>
+  )
+}
