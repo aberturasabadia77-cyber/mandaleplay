@@ -1,0 +1,61 @@
+export default function Privacidad() {
+  return (
+    <main style={{ minHeight: '100vh', background: '#060612', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: '60px 24px' }}>
+      <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+        <a href="/" style={{ color: '#00f5ff', fontSize: '13px', textDecoration: 'none', display: 'block', marginBottom: '40px' }}>← Volver a Mandale Play</a>
+
+        <h1 style={{ fontSize: '32px', fontWeight: '300', marginBottom: '8px' }}>Política de Privacidad</h1>
+        <p style={{ color: '#444', fontSize: '13px', marginBottom: '48px' }}>Última actualización: Mayo 2026</p>
+
+        {[
+          {
+            titulo: '1. Qué datos recopilamos',
+            texto: `Mandale Play no requiere registro ni cuenta de usuario. No recopilamos nombres, correos electrónicos ni ningún dato de identificación personal de forma directa.
+
+La información que el usuario ingresa en el formulario (tipo de evento, cantidad de personas, géneros musicales, etc.) se usa únicamente para generar el plan musical en ese momento y no se almacena en nuestros servidores.`
+          },
+          {
+            titulo: '2. Datos técnicos y cookies',
+            texto: `Como cualquier sitio web, nuestros servidores pueden registrar datos técnicos básicos como dirección IP, tipo de navegador y páginas visitadas. Esto es estándar en la infraestructura de hosting (Vercel) y se usa exclusivamente para el funcionamiento del servicio.
+
+Actualmente no utilizamos cookies propias de seguimiento ni publicidad.`
+          },
+          {
+            titulo: '3. Servicios de terceros',
+            texto: `Mandale Play utiliza los siguientes servicios externos que tienen sus propias políticas de privacidad:
+
+• YouTube / Google (reproducción de videos): policies.google.com/privacy
+• Anthropic Claude (generación de planes con IA): anthropic.com/privacy
+• GetSongBPM (verificación de BPMs): getsongbpm.com
+• Vercel (infraestructura de hosting): vercel.com/legal/privacy-policy
+
+Al usar Mandale Play, el usuario interactúa indirectamente con estos servicios.`
+          },
+          {
+            titulo: '4. Almacenamiento local',
+            texto: `El plan musical generado se guarda temporalmente en el sessionStorage del navegador del usuario. Esta información existe solo durante la sesión activa y se elimina automáticamente al cerrar el navegador. No tenemos acceso a esos datos.`
+          },
+          {
+            titulo: '5. Derechos del usuario',
+            texto: `Dado que no recopilamos datos personales identificables, no existe un perfil de usuario que modificar o eliminar. Si tenés alguna consulta sobre privacidad, podés contactarnos.`
+          },
+          {
+            titulo: '6. Menores de edad',
+            texto: `El servicio no está dirigido a menores de 13 años. No recopilamos conscientemente datos de menores.`
+          },
+          {
+            titulo: '7. Cambios en esta política',
+            texto: `Esta política puede actualizarse. Los cambios se publican en esta página con la fecha de actualización.`
+          },
+        ].map((s, i) => (
+          <div key={i} style={{ marginBottom: '36px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '600', color: '#00f5ff', marginBottom: '12px' }}>{s.titulo}</h2>
+            {s.texto.split('\n\n').map((p, j) => (
+              <p key={j} style={{ fontSize: '14px', color: '#888', lineHeight: 1.8, marginBottom: '12px' }}>{p}</p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </main>
+  )
+}
