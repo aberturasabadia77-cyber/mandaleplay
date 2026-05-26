@@ -205,6 +205,43 @@ export default function Evento() {
     return bloquesVerificados
   }
 
+  // Elimina canciones duplicadas entre bloques (mismo título o mismo artista >2 veces)
+  const deduplicarPlan = (bloques) => {
+    const titulosUsados = new Set()
+    const conteoArtistas = {}
+
+    return bloques.map(bloque => {
+      const cancionesUnicas = []
+
+      for (const c of (bloque.canciones_sugeridas || [])) {
+        const texto   = typeof c === 'string' ? c : (c.titulo || '')
+        // Normalizar: minúsculas, sin paréntesis, sin "remix/version"
+        const tituloNorm = texto.toLowerCase()
+          .replace(/\s*[\(\[].*?[\)\]]/g, '') // quitar (remix), [version], etc
+          .replace(/\s+-\s+.*$/, '')           // quitar " - Artista" del final
+          .trim()
+
+        // Extraer artista principal
+        const partes  = texto.split(' - ')
+        const artista = partes.length > 1 ? partes[partes.length - 1].split(',')[0].split('x')[0].trim() : ''
+
+        // Saltar si el título ya fue usado
+        if (titulosUsados.has(tituloNorm)) continue
+
+        // Saltar si el artista ya tiene 2 canciones
+        const cuentaArtista = conteoArtistas[artista.toLowerCase()] || 0
+        if (artista && cuentaArtista >= 2) continue
+
+        // Agregar
+        titulosUsados.add(tituloNorm)
+        if (artista) conteoArtistas[artista.toLowerCase()] = cuentaArtista + 1
+        cancionesUnicas.push(c)
+      }
+
+      return { ...bloque, canciones_sugeridas: cancionesUnicas }
+    })
+  }
+
   const generarPlan = async () => {
     setPaso(2); setError(null)
     const cantCanciones = calcularCanciones(form.duracion)
@@ -283,8 +320,10 @@ Suma de canciones_sugeridas = exactamente ${cantCanciones}.
       const clean  = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
 
+      // Deduplicar antes de verificar BPMs
+      const bloquesDedupados = deduplicarPlan(parsed.bloques || [])
       setVerificando(true)
-      const bloquesVerificados = await verificarBPMs(parsed.bloques || [])
+      const bloquesVerificados = await verificarBPMs(bloquesDedupados)
       setPlan({ ...parsed, bloques: bloquesVerificados })
       setVerificando(false)
       setPaso(3)
