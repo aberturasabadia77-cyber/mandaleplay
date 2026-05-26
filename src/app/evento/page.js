@@ -243,6 +243,11 @@ REGLAS CANCIONES REALES:
 3. Preferí hits conocidos y populares
 4. Necesitás exactamente ${cantCanciones} canciones
 
+REGLA ANTI-REPETICIÓN — CRÍTICO:
+5. Cada canción debe aparecer UNA SOLA VEZ en todo el plan. PROHIBIDO repetir el mismo título en distintos bloques, aunque sea versión diferente o remix.
+6. Antes de agregar cada canción verificá mentalmente que no la usaste antes en ningún bloque anterior.
+7. Si un artista ya tiene 2 canciones en el plan, buscá otro artista para los bloques siguientes. Variedad de artistas es obligatoria.
+
 Respondé SOLO con JSON válido (sin texto extra, sin backticks):
 {
   "titulo": "nombre creativo",
