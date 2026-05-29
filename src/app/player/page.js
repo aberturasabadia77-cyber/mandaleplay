@@ -19,6 +19,9 @@ function PlayerInner() {
   const listos     = useRef(0)
 
   const cancionesR    = useRef([])
+  const wakeLockR     = useRef(null)   // Wake Lock API
+  const estadoR       = useRef('cargando') // ref para visibilitychange (evita closures viejos)
+  const debiaSonar    = useRef(false)  // true cuando el player debería estar reproduciendo
   const indiceR       = useRef(0)
   const skipTimerR    = useRef(null)
   const loadTimerR    = useRef(null)
@@ -45,6 +48,31 @@ function PlayerInner() {
 
   const getActivo = () => activa.current === 'A' ? playerA.current : playerB.current
   const getEspera = () => activa.current === 'A' ? playerB.current : playerA.current
+
+  // Sincroniza estado + ref (evita closures viejos en visibilitychange)
+  const setEstadoSync = (val) => {
+    estadoR.current = val
+    setEstado(val)
+    if (val === 'playing') debiaSonar.current = true
+    if (val === 'error')   debiaSonar.current = false
+  }
+
+  // Wake Lock API — evita que el navegador suspenda la pestaña
+  const pedirWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator && !wakeLockR.current) {
+        wakeLockR.current = await navigator.wakeLock.request('screen')
+        console.log('Wake Lock activo')
+      }
+    } catch (e) { console.warn('Wake Lock no disponible:', e.message) }
+  }
+
+  const liberarWakeLock = () => {
+    if (wakeLockR.current) {
+      wakeLockR.current.release().catch(() => {})
+      wakeLockR.current = null
+    }
+  }
 
   const limpiarTimers = () => {
     clearTimeout(skipTimerR.current)
@@ -139,21 +167,21 @@ function PlayerInner() {
     setProgreso(0)
 
     const videoId = await buscarVideoId(idx)
-    if (!videoId) { setEstado('error'); agendarAutoSkip(800); return }
+    if (!videoId) { setEstadoSync('error'); agendarAutoSkip(800); return }
 
     const espera = getEspera()
     const activo = getActivo()
     const yaPrecargado = !!prefetchCache.current[idx]
 
     if (!sinCrossfade && yaPrecargado && espera) {
-      setEstado('playing')
+      setEstadoSync('playing')
       try { espera.setVolume(0); espera.playVideo() } catch {}
       crossfade(1200)
       activa.current = activa.current === 'A' ? 'B' : 'A'
       setBandejaVis(activa.current)
       iniciarProgreso()
     } else {
-      setEstado('cargando')
+      setEstadoSync('cargando')
       try { activo?.setVolume(100); activo?.loadVideoById({ videoId, startSeconds: lista[idx].inicio || 0 }) } catch {}
       loadTimerR.current = setTimeout(() => {
         const s = getActivo()?.getPlayerState?.()
@@ -195,7 +223,10 @@ function PlayerInner() {
               const S = window.YT.PlayerState
               const esActivo = (esPrincipal && activa.current === 'A') || (!esPrincipal && activa.current === 'B')
               if (!esActivo) return
-              if (data === S.PLAYING) { limpiarTimers(); setEstado('playing'); iniciarProgreso() }
+              if (data === S.PLAYING) {
+              limpiarTimers(); setEstadoSync('playing'); iniciarProgreso()
+              pedirWakeLock() // activar wake lock cuando empieza a sonar
+            }
               if (data === S.PAUSED)  { clearInterval(progresoT.current) }
               if (data === S.ENDED)   {
                 const sig = indiceR.current + 1
@@ -205,7 +236,7 @@ function PlayerInner() {
             onError: () => {
               const esActivo = (esPrincipal && activa.current === 'A') || (!esPrincipal && activa.current === 'B')
               if (!esActivo) return
-              setEstado('error')
+              setEstadoSync('error')
               delete prefetchCache.current[indiceR.current]
               agendarAutoSkip(800)
             },
@@ -225,6 +256,38 @@ function PlayerInner() {
     }
     return limpiarTimers
   }, [canciones])
+
+  // Page Visibility API — retoma si se cortó al volver a la pestaña
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'visible') {
+        // Re-pedir wake lock (se libera automáticamente al ocultar la pestaña)
+        await pedirWakeLock()
+
+        // Si debería estar sonando pero el player se detuvo → retomar
+        if (debiaSonar.current) {
+          const player = getActivo()
+          const state  = player?.getPlayerState?.()
+          // 2=paused, -1=unstarted, 0=ended → retomar
+          if (state === 2 || state === -1 || state === 0) {
+            console.log('Retomando reproducción al volver a la pestaña, estado:', state)
+            setTimeout(() => {
+              try { player?.playVideo?.() } catch(e) {}
+            }, 400)
+          }
+        }
+      } else {
+        // Pestaña oculta: el wake lock se libera solo, actualizamos ref
+        wakeLockR.current = null
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      liberarWakeLock()
+    }
+  }, []) // solo mount/unmount — usa refs para evitar closures viejos
 
   const actual      = canciones[indiceActual] || {}
   const energyColor = ENERGIA_COLOR[actual.energia] || NEON_CYAN
@@ -289,7 +352,7 @@ function PlayerInner() {
         {actual.bpm && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(0,245,255,0.06)', border: `1px solid rgba(0,245,255,0.2)`, borderRadius: '100px', padding: '4px 14px', boxShadow: `0 0 12px rgba(0,245,255,0.1)` }}>
             <span style={{ fontSize: '10px', color: NEON_CYAN }}>♩</span>
-            <span style={{ fontSize: '12px', color: NEON_CYAN, fontWeight: '600' }}>{actual.bpm} BPM</span>
+            <span style={{ fontSize: '12px', color: NEON_CYAN, fontWeight: '600' }}>{actual.bpm ? `${actual.bpm} BPM` : '—'}</span>
           </div>
         )}
       </div>
@@ -341,11 +404,9 @@ function PlayerInner() {
                 </div>
                 <div style={{ fontSize: '10px', color: '#333' }}>{c.bloque}</div>
               </div>
-              {c.bpm && (
-                <span style={{ fontSize: '10px', color: esActual ? NEON_CYAN : '#2a2a4a', flexShrink: 0, fontWeight: esActual ? '600' : '400' }}>
-                  {c.bpm}♩
+              <span style={{ fontSize: '10px', color: c.bpm ? (esActual ? NEON_CYAN : '#2a2a4a') : '#1a1a3a', flexShrink: 0, fontWeight: esActual && c.bpm ? '600' : '400' }}>
+                  {c.bpm ? `${c.bpm}♩` : '—'}
                 </span>
-              )}
               {enCache && !esActual && <span style={{ fontSize: '7px', color: '#1a1a3a' }} title="Precargado">●</span>}
               {esActual && <span style={{ color: NEON_CYAN, fontSize: '8px', filter: `drop-shadow(0 0 4px ${NEON_CYAN})` }}>●</span>}
             </div>
