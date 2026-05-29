@@ -137,7 +137,7 @@ function Timeline({ bloques }) {
                         <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           <span style={{ color, fontSize: '10px', flexShrink: 0 }}>♪</span>
                           <span style={{ fontSize: '13px', color: '#777', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cancion.titulo}</span>
-                          {cancion.bpm && <span style={{ fontSize: '11px', color, flexShrink: 0, fontWeight: '600' }}>{cancion.bpm} BPM</span>}
+                          <span style={{ fontSize: '11px', color: cancion.bpm ? color : '#333', flexShrink: 0, fontWeight: cancion.bpm ? '600' : '400' }}>{cancion.bpm ? `${cancion.bpm} BPM` : '—'}</span>
                           {cancion.inicio > 0 && <span style={{ fontSize: '10px', color: '#333', flexShrink: 0 }}>▶{cancion.inicio}s</span>}
                         </div>
                       )
@@ -180,7 +180,6 @@ export default function Evento() {
   const verificarBPMs = async (bloques) => {
     const bloquesVerificados = await Promise.all(
       bloques.map(async (bloque) => {
-        const rango = BPM_RANGO[bloque.energia] || { min: 70, max: 140 }
         const cancionesVerificadas = await Promise.all(
           (bloque.canciones_sugeridas || []).map(async (c) => {
             const texto = typeof c === 'string' ? c : (c.titulo || '')
@@ -188,18 +187,20 @@ export default function Evento() {
             try {
               const res  = await fetch(`/api/bpm?titulo=${encodeURIComponent(titulo)}&artista=${encodeURIComponent(artista)}`)
               const data = await res.json()
-              const bpmReal = data.bpm || (typeof c === 'object' ? c.bpm : null)
+              // Solo usar BPM de la API — nunca el generado por la IA
+              const bpmReal = data.bpm || null
               return { ...(typeof c === 'object' ? c : { titulo: texto, inicio: 0 }), bpm: bpmReal }
             } catch {
+              // Error de red: dejar bpm como null (se muestra "—")
               return typeof c === 'object' ? c : { titulo: texto, inicio: 0, bpm: null }
             }
           })
         )
+        // Ordenar por BPM real (los sin BPM van al final)
         const conBpm    = cancionesVerificadas.filter(c => c.bpm)
         const sinBpm    = cancionesVerificadas.filter(c => !c.bpm)
         const ordenadas = [...conBpm.sort((a, b) => a.bpm - b.bpm), ...sinBpm]
-        const fueraDeRango = conBpm.some(c => c.bpm < rango.min - 15 || c.bpm > rango.max + 15)
-        return { ...bloque, canciones_sugeridas: ordenadas, bpm_verificado: !fueraDeRango }
+        return { ...bloque, canciones_sugeridas: ordenadas }
       })
     )
     return bloquesVerificados
@@ -261,14 +262,6 @@ DATOS DEL EVENTO:
 
 CONTEXTO CULTURAL: En Argentina toda reunión incluye comida. Estructurá el timeline considerando llegada/aperitivo → comida → sobremesa/baile según corresponda.
 
-REGLAS DE BPM — CRÍTICO:
-- Bloques de energía BAJA: canciones entre 70-95 BPM
-- Bloques de energía MEDIA: canciones entre 95-120 BPM
-- Bloques de energía ALTA: canciones entre 120-140 BPM
-- Dentro de cada bloque, progresión GRADUAL (nunca más de 10-15 BPM de salto entre canciones)
-- Entre bloques, diferencia máxima de 15 BPM
-- Indicá el BPM REAL y preciso de cada canción
-
 CONSIDERACIONES DE DJ:
 - Horario afecta el pico: noche = calentamiento corto, tarde = calentamiento largo
 - Con pista: construí hacia pico bailable con BPM alto
@@ -295,11 +288,11 @@ Respondé SOLO con JSON válido (sin texto extra, sin backticks):
       "nombre": "nombre del bloque",
       "duracion": "X min",
       "energia": "baja/media/alta",
-      "bpm_rango": "XX-XX BPM",
+
       "descripcion": "qué suena, por qué en este momento, cómo conecta con el siguiente",
       "artistas": ["artista1", "artista2"],
       "canciones_sugeridas": [
-        { "titulo": "Nombre canción - Artista", "inicio": 15, "bpm": 95 }
+        { "titulo": "Nombre canción - Artista", "inicio": 15 }
       ]
     }
   ]
@@ -307,7 +300,7 @@ Respondé SOLO con JSON válido (sin texto extra, sin backticks):
 
 Suma de canciones_sugeridas = exactamente ${cantCanciones}.
 "inicio" = segundo donde empieza la música real (0 si arranca directo).
-"bpm" = BPM real de esa canción, respetando progresión gradual dentro del bloque.`
+`
 
       const response = await fetch('/api/generar', {
         method: 'POST',
